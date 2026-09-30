@@ -1,8 +1,12 @@
 # Functions the recompiler's analysis cannot find on its own.
+# Addresses/sizes derived from the BASIC-decompressed image (image.bin, base 0x82000000).
 
 [functions]
-# Tail-jump target reached from a jump-table thunk (b 0x82477BE0). pdata splits the
-# preceding function sub_82477B78 exactly at 0x82477BE0, so this block has no pdata
-# entry and analysis left it "not in any function". It shares sub_82477B78's frame and
-# ends at its own epilogue blr @0x82477D0C. Size = 0x82477D10 - 0x82477BE0.
-"0x82477BE0" = { size = 0x130 }
+# Tail-branch target: "b 0x82477BE0" from 0x82471808, with no pdata entry so analysis
+# left it "not in any function". Ends at blr @0x82477C1C.
+"0x82477BE0" = { size = 0x40 }
+
+# Dispatcher entry in the .rdata code-pointer table ~0x820626F4-0x82062834, stored into an
+# object and invoked via bctrl. Clean start (preceded by b 0x8229CE40); ends at its last
+# bctr tail-call @0x8229CF7C. Passes the 0x1337F001 cookie in r5.
+"0x8229CEA8" = { size = 0xD8 }
