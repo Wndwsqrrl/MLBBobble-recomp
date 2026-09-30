@@ -1,0 +1,39 @@
+# Game files: bring your own copy, never commit
+/game/
+*.xex
+*.xexp
+basefile.exe
+
+# Recompiler output (regenerated locally); keep the SDK's CMake glue
+/generated/*
+!/generated/rexglue.cmake
+
+# Build output
+/build/
+/out/
+bin/
+obj/
+
+# Disassembler databases (Ghidra / IDA)
+*.gpr
+*.rep/
+*.lock
+*.lock~
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+
+# Logs and captures
+*.log
+*.dmp
+
+# Editors / OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini

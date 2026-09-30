@@ -1,0 +1,5 @@
+# Settings for bobbleheadpros, read from the folder the executable is in.
+# Command-line flags override these, e.g. --readback_resolve=none
+
+# Full XBLA license instead of the trial.
+license_mask = 1

@@ -1,0 +1,8 @@
+# Functions the recompiler's analysis cannot find on its own.
+
+[functions]
+# Tail-jump target reached from a jump-table thunk (b 0x82477BE0). pdata splits the
+# preceding function sub_82477B78 exactly at 0x82477BE0, so this block has no pdata
+# entry and analysis left it "not in any function". It shares sub_82477B78's frame and
+# ends at its own epilogue blr @0x82477D0C. Size = 0x82477D10 - 0x82477BE0.
+"0x82477BE0" = { size = 0x130 }
