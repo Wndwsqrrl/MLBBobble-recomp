@@ -1,0 +1,279 @@
+diff --git a/include/rex/input/input_system.h b/include/rex/input/input_system.h
+index 1cb3faa..b6c5953 100644
+--- a/include/rex/input/input_system.h
++++ b/include/rex/input/input_system.h
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include <memory>
++#include <mutex>
+ #include <vector>
+ 
+ #include <rex/input/device_assignment.h>
+@@ -65,6 +66,9 @@ class InputSystem : public system::IInputSystem {
+   // does not renumber pad two.
+   std::vector<DeviceInfo> devices_;
+   std::vector<InputDriver*> device_owners_;
++
++  // Guest threads poll input concurrently; RefreshDevices() rebuilds devices_.
++  std::recursive_mutex mutex_;
+ };
+ 
+ /// Create a default InputSystem with SDL + NOP drivers.
+diff --git a/src/codegen/builders/vector.cpp b/src/codegen/builders/vector.cpp
+index cbdd7f7..bd889b1 100644
+--- a/src/codegen/builders/vector.cpp
++++ b/src/codegen/builders/vector.cpp
+@@ -1098,14 +1098,19 @@ bool build_vpkuhus(BuilderContext& ctx) {
+   // NOTE(tomc): _mm_packus_epi16 treats inputs as signed, so we need custom saturation for
+   // unsigned. Unsigned halfwords >= 0x8000 would be interpreted as negative and clamped to 0
+   // instead of 0xFF.
++  // Build into a temporary: vD may alias vA or vB, and writing vD element by element would
++  // clobber source elements that are still to be read.
++  ctx.println("\t{{");
++  ctx.println("\talignas(16) uint8_t pk_[16];");
+   for (size_t i = 0; i < 8; i++) {
+-    ctx.println("\t{}.u8[{}] = {}.u16[{}] > 0xFF ? 0xFF : (uint8_t){}.u16[{}];",
+-                ctx.v(ctx.insn.operands[0]), 15 - i, ctx.v(ctx.insn.operands[1]), 7 - i,
+-                ctx.v(ctx.insn.operands[1]), 7 - i);
+-    ctx.println("\t{}.u8[{}] = {}.u16[{}] > 0xFF ? 0xFF : (uint8_t){}.u16[{}];",
+-                ctx.v(ctx.insn.operands[0]), 7 - i, ctx.v(ctx.insn.operands[2]), 7 - i,
+-                ctx.v(ctx.insn.operands[2]), 7 - i);
++    ctx.println("\tpk_[{}] = {}.u16[{}] > 0xFF ? 0xFF : (uint8_t){}.u16[{}];", 15 - i,
++                ctx.v(ctx.insn.operands[1]), 7 - i, ctx.v(ctx.insn.operands[1]), 7 - i);
++    ctx.println("\tpk_[{}] = {}.u16[{}] > 0xFF ? 0xFF : (uint8_t){}.u16[{}];", 7 - i,
++                ctx.v(ctx.insn.operands[2]), 7 - i, ctx.v(ctx.insn.operands[2]), 7 - i);
+   }
++  ctx.println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_load_si128((simde__m128i*)pk_));",
++              ctx.v(ctx.insn.operands[0]));
++  ctx.println("\t}}");
+   return true;
+ }
+ 
+@@ -1126,14 +1131,18 @@ bool build_vpkuwus(BuilderContext& ctx) {
+ 
+   // NOTE(tomc): _mm_packus_epi32 treats inputs as signed, so we need custom saturation for unsigned
+   // Saturate each u32 to [0, 0xFFFF], then pack to u16
++  // Build into a temporary: vD may alias vA or vB (see build_vpkuhus).
++  ctx.println("\t{{");
++  ctx.println("\talignas(16) uint16_t pk_[8];");
+   for (size_t i = 0; i < 4; i++) {
+-    ctx.println("\t{}.u16[{}] = {}.u32[{}] > 0xFFFF ? 0xFFFF : (uint16_t){}.u32[{}];",
+-                ctx.v(ctx.insn.operands[0]), 7 - i, ctx.v(ctx.insn.operands[1]), 3 - i,
+-                ctx.v(ctx.insn.operands[1]), 3 - i);
+-    ctx.println("\t{}.u16[{}] = {}.u32[{}] > 0xFFFF ? 0xFFFF : (uint16_t){}.u32[{}];",
+-                ctx.v(ctx.insn.operands[0]), 3 - i, ctx.v(ctx.insn.operands[2]), 3 - i,
+-                ctx.v(ctx.insn.operands[2]), 3 - i);
++    ctx.println("\tpk_[{}] = {}.u32[{}] > 0xFFFF ? 0xFFFF : (uint16_t){}.u32[{}];", 7 - i,
++                ctx.v(ctx.insn.operands[1]), 3 - i, ctx.v(ctx.insn.operands[1]), 3 - i);
++    ctx.println("\tpk_[{}] = {}.u32[{}] > 0xFFFF ? 0xFFFF : (uint16_t){}.u32[{}];", 3 - i,
++                ctx.v(ctx.insn.operands[2]), 3 - i, ctx.v(ctx.insn.operands[2]), 3 - i);
+   }
++  ctx.println("\tsimde_mm_store_si128((simde__m128i*){}.u16, simde_mm_load_si128((simde__m128i*)pk_));",
++              ctx.v(ctx.insn.operands[0]));
++  ctx.println("\t}}");
+   return true;
+ }
+ 
+diff --git a/src/input/input_system.cpp b/src/input/input_system.cpp
+index 813bb1c..677b312 100644
+--- a/src/input/input_system.cpp
++++ b/src/input/input_system.cpp
+@@ -72,6 +72,7 @@ void InputSystem::SetActiveCallback(std::function<bool()> callback) {
+ }
+ 
+ void InputSystem::SetDeviceAssignment(std::unique_ptr<DeviceAssignment> assignment) {
++  std::lock_guard<std::recursive_mutex> lock(mutex_);
+   assignment_ = std::move(assignment);
+   if (assignment_) {
+     assignment_->OnDevicesChanged(devices_);
+@@ -186,6 +187,7 @@ const DeviceInfo* InputSystem::DeviceInfoFor(DeviceId id) const {
+ 
+ X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
+                                       X_INPUT_CAPABILITIES* out_caps) {
++  std::lock_guard<std::recursive_mutex> lock(mutex_);
+   SCOPE_profile_cpu_f("hid");
+   if (!out_caps || !assignment_) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+@@ -213,6 +215,7 @@ X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
+ }
+ 
+ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
++  std::lock_guard<std::recursive_mutex> lock(mutex_);
+   SCOPE_profile_cpu_f("hid");
+   if (!assignment_) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+@@ -252,6 +255,7 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
+ }
+ 
+ X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration) {
++  std::lock_guard<std::recursive_mutex> lock(mutex_);
+   SCOPE_profile_cpu_f("hid");
+   if (!assignment_) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+@@ -294,6 +298,7 @@ X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration
+ 
+ X_RESULT InputSystem::GetKeystroke(uint32_t user_index, uint32_t flags,
+                                    X_INPUT_KEYSTROKE* out_keystroke) {
++  std::lock_guard<std::recursive_mutex> lock(mutex_);
+   SCOPE_profile_cpu_f("hid");
+   if (!assignment_) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+diff --git a/src/kernel/xam/xam_content.cpp b/src/kernel/xam/xam_content.cpp
+index 1fb1e16..8442b8a 100644
+--- a/src/kernel/xam/xam_content.cpp
++++ b/src/kernel/xam/xam_content.cpp
+@@ -107,6 +107,18 @@ u32 XamContentCreateEnumerator_entry(u32 user_index, u32 device_id, u32 content_
+     // TODO(gibbed): disc drive content
+   }
+ 
++  // REX workaround (Bobblehead Pros): match the aggregate enumerator and report
++  // one dummy savegame so the game stops looping the storage selector.
++  if (e->item_count() == 0 && XContentType(uint32_t(content_type)) == XContentType(1)) {
++    auto item = e->AppendItem();
++    if (item) {
++      item->device_id = static_cast<uint32_t>(DummyDeviceId::HDD);
++      item->content_type = XContentType(uint32_t(content_type));
++      item->set_display_name(u"SAVE");
++      item->set_file_name("SAVEDATA");
++    }
++  }
++
+   REXKRNL_DEBUG("XamContentCreateEnumerator: added {} items to enumerator", e->item_count());
+ 
+   *handle_out = e->handle();
+diff --git a/src/kernel/xam/xam_content_aggregate.cpp b/src/kernel/xam/xam_content_aggregate.cpp
+index de4a527..3f4ac3e 100644
+--- a/src/kernel/xam/xam_content_aggregate.cpp
++++ b/src/kernel/xam/xam_content_aggregate.cpp
+@@ -143,6 +143,20 @@ u32 XamContentAggregateCreateEnumerator_entry(u64 xuid, u32 device_id, u32 conte
+     AddODDContentTest(e, content_type_enum);
+   }
+ 
++  // REX workaround (Bobblehead Pros): the game loops XamShowDeviceSelectorUI +
++  // this enumerator forever at the splash until a savegame is found, and never
++  // creates one itself. Present one dummy savegame so the loop can break.
++  if (e->item_count() == 0 && content_type_enum == XContentType(1)) {
++    auto item = e->AppendItem();
++    if (item) {
++      item->device_id = static_cast<uint32_t>(DummyDeviceId::HDD);
++      item->content_type = content_type_enum;
++      item->set_display_name(u"SAVE");
++      item->set_file_name("SAVEDATA");
++      item->title_id = kCurrentlyRunningTitleId;
++    }
++  }
++
+   REXKRNL_DEBUG("XamContentAggregateCreateEnumerator: added {} items to enumerator",
+                 e->item_count());
+ 
+diff --git a/src/kernel/xam/xam_ui.cpp b/src/kernel/xam/xam_ui.cpp
+index 5a572ce..3cdad7c 100644
+--- a/src/kernel/xam/xam_ui.cpp
++++ b/src/kernel/xam/xam_ui.cpp
+@@ -560,6 +560,16 @@ uint32_t XamShowMessageBoxUIEx_entry() {
+   return 0;
+ }
+ 
++// REX: the real achievements blade is synchronous and blocks until the user
++// closes it. Our stub returned instantly with no XN_SYS_UI notification, so the
++// game waited forever for the "UI closed" signal (freeze on the Achievements
++// menu item). Dispatch headless so the blade appears to open and immediately
++// close, letting the game continue.
++u32 XamShowAchievementsUI_entry(u32 user_index) {
++  (void)user_index;
++  return xeXamDispatchHeadless([]() -> X_RESULT { return X_ERROR_SUCCESS; }, 0);
++}
++
+ }  // namespace xam
+ }  // namespace kernel
+ }  // namespace rex
+@@ -583,7 +593,7 @@ REX_EXPORT_STUB(__imp__XamNavigate);
+ REX_EXPORT_STUB(__imp__XamNavigateBack);
+ REX_EXPORT_STUB(__imp__XamOverrideHudOpenType);
+ REX_EXPORT_STUB(__imp__XamShowAchievementDetailsUI);
+-REX_EXPORT_STUB(__imp__XamShowAchievementsUI);
++REX_EXPORT(__imp__XamShowAchievementsUI, rex::kernel::xam::XamShowAchievementsUI_entry)
+ REX_EXPORT_STUB(__imp__XamShowAchievementsUIEx);
+ REX_EXPORT_STUB(__imp__XamShowAndWaitForMessageBoxEx);
+ REX_EXPORT_STUB(__imp__XamShowAvatarAwardGamesUI);
+diff --git a/src/ui/presenter.cpp b/src/ui/presenter.cpp
+index 7360ed9..6566267 100644
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -12,7 +12,9 @@
+ #include <algorithm>
+ #include <atomic>
+ #include <cctype>
++#include <cstdio>
+ #include <utility>
++#include <vector>
+ 
+ #include <rex/assert.h>
+ #include <rex/cvar.h>
+@@ -426,6 +428,41 @@ void Presenter::PaintFromUIThread(bool force_paint) {
+     return;
+   }
+ 
++  // --- REX debug: sentinel-file triggered guest-output screenshot (BMP) ---
++  {
++    const char* kShoot = "F:/bobblehead-recomp/out/SHOOT";
++    if (std::FILE* sf = std::fopen(kShoot, "rb")) {
++      std::fclose(sf);
++      std::remove(kShoot);
++      RawImage img;
++      if (CaptureGuestOutput(img) && img.width && img.height && !img.data.empty()) {
++        uint32_t w = img.width, h = img.height;
++        uint32_t row = w * 3u;
++        uint32_t pad = (4u - (row & 3u)) & 3u;
++        uint32_t dataSize = (row + pad) * h;
++        uint32_t fileSize = 54u + dataSize;
++        std::vector<uint8_t> bmp(fileSize, 0);
++        auto put16 = [&](uint32_t off, uint16_t v){ bmp[off]=v&0xFF; bmp[off+1]=(v>>8)&0xFF; };
++        auto put32 = [&](uint32_t off, uint32_t v){ bmp[off]=v&0xFF; bmp[off+1]=(v>>8)&0xFF; bmp[off+2]=(v>>16)&0xFF; bmp[off+3]=(v>>24)&0xFF; };
++        bmp[0]='B'; bmp[1]='M'; put32(2,fileSize); put32(10,54);
++        put32(14,40); put32(18,w); put32(22,h); put16(26,1); put16(28,24); put32(34,dataSize);
++        for (uint32_t y=0; y<h; ++y) {
++          const uint8_t* src = img.data.data() + (size_t)y * img.stride;
++          uint8_t* dst = bmp.data() + 54 + (size_t)(h-1-y)*(row+pad);
++          for (uint32_t x=0; x<w; ++x) {
++            dst[x*3+0] = src[x*4+2]; // B
++            dst[x*3+1] = src[x*4+1]; // G
++            dst[x*3+2] = src[x*4+0]; // R
++          }
++        }
++        if (std::FILE* of = std::fopen("F:/bobblehead-recomp/out/guest.bmp","wb")) {
++          std::fwrite(bmp.data(),1,bmp.size(),of); std::fclose(of);
++        }
++      }
++    }
++  }
++  // --- end REX debug ---
++
+   // Defer changes to the paint mode as well as window paint requests, and do
+   // them in this function so they're consistent with the assumptions made here.
+   assert_false(is_in_ui_thread_paint_);
+diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
+index b94fe9e..194b0ff 100644
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -51,6 +51,10 @@ REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
+                       "GPU emulation")
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ 
++REXCVAR_DEFINE_STRING(gpu_backend, "any", "GPU",
++                      "Graphics backend for the GPU plugin: 'any', 'd3d12', or 'vulkan'")
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++
+ namespace rex {
+ 
+ // --- ReXApp ---
+@@ -314,7 +318,7 @@ bool ReXApp::SetupPresentation() {
+   OnPreSetup(config_);
+ 
+   if (!config_.graphics && !config_.gpu_plugin.empty()) {
+-    config_.graphics = rex::system::LoadGpuPlugin(config_.gpu_plugin);
++    config_.graphics = rex::system::LoadGpuPlugin(config_.gpu_plugin, REXCVAR_GET(gpu_backend));
+     if (!config_.graphics) {
+       // Fatal by design: no silent headless fallback.
+       auto msg =

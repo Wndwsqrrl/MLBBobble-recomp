@@ -13,6 +13,7 @@ include(generated/rexglue.cmake)
 # Sources
 set(BOBBLEHEADPROS_SOURCES
     src/main.cpp
+    src/trace_hooks.cpp
 )
 
 if(WIN32)

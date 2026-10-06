@@ -1,12 +1,76 @@
-# Functions the recompiler's analysis cannot find on its own.
-# Addresses/sizes derived from the BASIC-decompressed image (image.bin, base 0x82000000).
-
+# Functions analysis can't find (no pdata; reached via vtables/indirect).
 [functions]
-# Tail-branch target: "b 0x82477BE0" from 0x82471808, with no pdata entry so analysis
-# left it "not in any function". Ends at blr @0x82477C1C.
 "0x82477BE0" = { size = 0x40 }
-
-# Dispatcher entry in the .rdata code-pointer table ~0x820626F4-0x82062834, stored into an
-# object and invoked via bctrl. Clean start (preceded by b 0x8229CE40); ends at its last
-# bctr tail-call @0x8229CF7C. Passes the 0x1337F001 cookie in r5.
 "0x8229CEA8" = { size = 0xD8 }
+"0x823F2358" = { size = 0x240 }
+"0x821A96B0" = { size = 0x10 }
+"0x821C1798" = { size = 0x10 }
+"0x821C17A8" = { size = 0x10 }
+"0x821C17B8" = { size = 0x10 }
+"0x821C17C8" = { size = 0x10 }
+"0x821C17D8" = { size = 0x10 }
+"0x821C17E8" = { size = 0x10 }
+"0x821C17F8" = { size = 0x10 }
+"0x821C1808" = { size = 0x10 }
+"0x821C1818" = { size = 0x10 }
+"0x821C1828" = { size = 0x10 }
+"0x821C1838" = { size = 0x10 }
+"0x821C1848" = { size = 0x10 }
+"0x821C1858" = { size = 0x10 }
+"0x821C1868" = { size = 0x10 }
+"0x821C1878" = { size = 0x10 }
+"0x821C1888" = { size = 0x10 }
+"0x821C1898" = { size = 0x10 }
+"0x821C18A8" = { size = 0x10 }
+"0x821C18B8" = { size = 0x10 }
+"0x821C18C8" = { size = 0x10 }
+"0x821C18D8" = { size = 0x10 }
+"0x821C18E8" = { size = 0x10 }
+"0x821C18F8" = { size = 0x10 }
+"0x821C1908" = { size = 0x10 }
+"0x821C1918" = { size = 0x10 }
+"0x821C1928" = { size = 0x10 }
+"0x821C1938" = { size = 0x10 }
+"0x821C1948" = { size = 0x10 }
+"0x82228518" = { size = 0x8 }
+"0x82294B00" = { size = 0x8 }
+"0x82296E90" = { size = 0x8 }
+"0x82296EA0" = { size = 0x8 }
+"0x82296EA8" = { size = 0x58 }
+"0x82296F00" = { size = 0x8 }
+"0x8229CE88" = { size = 0x8 }
+"0x8229CE90" = { size = 0x8 }
+"0x8229D258" = { size = 0x8 }
+"0x8229D278" = { size = 0x8 }
+"0x8229D288" = { size = 0x8 }
+"0x8229D290" = { size = 0x8 }
+"0x8229D298" = { size = 0x8 }
+"0x8229DA58" = { size = 0x18 }
+"0x8229E718" = { size = 0x8 }
+"0x8229F428" = { size = 0x8 }
+"0x8229F918" = { size = 0x8 }
+"0x822B1A20" = { size = 0x8 }
+"0x822EF748" = { size = 0x10 }
+"0x822F8CB0" = { size = 0x10 }
+"0x822F8CC0" = { size = 0x10 }
+"0x822F8CD0" = { size = 0x10 }
+"0x822F8CE0" = { size = 0x10 }
+"0x822F8CF0" = { size = 0x10 }
+"0x82360338" = { size = 0x8 }
+"0x8239B518" = { size = 0x10 }
+"0x823DF748" = { size = 0x10 }
+"0x823D6A88" = { size = 0x10 }
+"0x823D6A98" = { size = 0x10 }
+"0x8241F838" = { size = 0x10 }
+"0x8241F848" = { size = 0x10 }
+
+[[midasm_hook]]
+address = 0x82291C94
+name = "HookForceLink"
+registers = ["r3"]
+return_on_true = true
+
+[[midasm_hook]]
+address = 0x82246BC0
+name = "HookVblank"
+registers = ["r3"]

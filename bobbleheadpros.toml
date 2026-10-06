@@ -1,5 +1,23 @@
 # Settings for bobbleheadpros, read from the folder the executable is in.
 # Command-line flags override these, e.g. --readback_resolve=none
 
+# NOTE: game_data_root canNOT be set here (the engine reads it before this file
+# loads). Launch via "Play MLB Bobblehead Pros.bat" which passes it on the
+# command line, or run with --game_data_root=... yourself.
+
 # Full XBLA license instead of the trial.
 license_mask = 1
+
+# NVIDIA's default RTV render path leaves the menus/gameplay black on this GPU;
+# the ROV (rasterizer-ordered-views) path renders them correctly.
+render_target_path_d3d12 = "rov"
+
+# Enable keyboard-as-controller so the game is playable without a gamepad.
+# Keys: Start = Enter, A = Space, B = Backspace, X = L, Y = P,
+# move/left-stick = W A S D, D-pad = Shift+Arrows, Back = Z/Tab.
+mnk_mode = true
+
+# Internal render-resolution scale (1-8; supersampling, requires restart).
+# 2 = render the 3D scene at 2x and downsample -> sharper distant faces/textures.
+# Bump to 3 or 4 for even sharper (the RTX 2080 Super handles this game easily).
+resolution_scale = 2
