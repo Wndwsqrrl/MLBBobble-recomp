@@ -1,18 +1,24 @@
-# Game files: bring your own copy, never commit
-/game/
+# Game files: bring your own copy, never commit (any project subdir)
+game/
 *.xex
 *.xexp
 basefile.exe
 
 # Recompiler output (regenerated locally); keep the SDK's CMake glue
-/generated/*
-!/generated/rexglue.cmake
+**/generated/*
+!**/generated/rexglue.cmake
 
 # Build output
-/build/
-/out/
+build/
+out/
 bin/
 obj/
+
+# Launcher: user-supplied box art, local config, and built binary
+launcher/art/
+launcher/launcher.cfg
+*.exe
+*.pdb
 
 # Disassembler databases (Ghidra / IDA)
 *.gpr
@@ -37,3 +43,8 @@ obj/
 *.user
 Thumbs.db
 desktop.ini
+
+# Internal dev notes / agent context (never publish)
+CLAUDE.md
+.claude/
+AGENTS.md

@@ -1,0 +1,13 @@
+# Functions analysis can't find (no pdata; reached via vtables/indirect).
+[functions]
+"0x823CE808" = { size = 0x44C }
+"0x8225A2A0" = { size = 0x228 }
+"0x8225ADB8" = { size = 0x50 }
+"0x82254190" = { size = 0x20 }
+"0x82375B48" = { size = 0x10 }
+"0x822541B0" = { size = 0x54 }
+"0x82375B58" = { size = 0xBCC }
+"0x822F1BE0" = { size = 0x9B0 }
+"0x822F2590" = { size = 0xF4 }
+"0x82330830" = { size = 0x48 }
+"0x82336220" = { size = 0xC }
