@@ -1,5 +1,9 @@
 # MLB Bobblehead Recomp
 
+[![Download](https://img.shields.io/github/v/release/Wndwsqrrl/MLBBobble-recomp?label=Download&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Wndwsqrrl/MLBBobble-recomp/total?label=Downloads&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-6d4bd6)](LICENSE)
+
 Native PC (Windows) ports of the two Xbox 360 **MLB Bobblehead** games, produced by
 **static recompilation** with [ReXGlue](#acknowledgements) — the original PowerPC game code
 is translated ahead-of-time into C++ and compiled to a native x64 executable that runs on a
@@ -226,3 +230,7 @@ This project is for game preservation and research. It is **not affiliated with,
 or sponsored by** Konami, Major League Baseball, or Microsoft. It distributes no copyrighted
 game code or assets — you must supply your own legally‑obtained copies of the games. All
 trademarks are the property of their respective owners.
+
+The project's own code (recompilation configs, launcher, and SDK patches) is released under
+the [MIT License](LICENSE). It builds on BSD‑licensed code from Xenia and the ReXGlue runtime;
+those components remain under their own licenses.
