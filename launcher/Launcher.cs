@@ -250,17 +250,21 @@ class SetupForm : GradientForm {
 }
 
 class OptionsForm : GradientForm {
-    static readonly string[] Tomls = {
-        @"F:\bobblehead-recomp\out\build\win-amd64-release\bobbleheadpros.toml",
-        @"F:\bobblehead-battle-recomp\out\build\win-amd64-release\bobbleheadbattle.toml"
-    };
+    // Each game's runtime settings live next to its exe as bobblehead<game>.toml.
+    readonly string[] Tomls;
     CheckBox cbFull, cbVsync, cbMnk; ComboBox cbScale;
     CheckBox Make(string text, int y) {
         var c = new CheckBox { Text = text, ForeColor = Theme.Ink, Font = new Font("Segoe UI", 11),
             AutoSize = true, Location = new Point(28, y), BackColor = Color.Transparent };
         Controls.Add(c); return c;
     }
-    public OptionsForm() {
+    public OptionsForm(List<GameDef> games) {
+        var tomls = new List<string>();
+        foreach (var g in games) {
+            if (string.IsNullOrEmpty(g.Exe)) continue;
+            try { tomls.Add(Path.ChangeExtension(g.Exe, ".toml")); } catch { }
+        }
+        Tomls = tomls.ToArray();
         Text = "Options"; ClientSize = new Size(440, 332);
         var head = new Label { Text = "Options", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 15),
             AutoSize = true, Location = new Point(26, 18), BackColor = Color.Transparent };
@@ -291,7 +295,7 @@ class OptionsForm : GradientForm {
     void LoadCurrent() {
         cbScale.SelectedIndex = 0; cbFull.Checked = true; cbVsync.Checked = true; cbMnk.Checked = true;
         try {
-            if (File.Exists(Tomls[0])) {
+            if (Tomls.Length > 0 && File.Exists(Tomls[0])) {
                 string t = File.ReadAllText(Tomls[0]);
                 var m = Regex.Match(t, @"(?m)^\s*resolution_scale\s*=\s*(\d+)");
                 if (m.Success) { int v = int.Parse(m.Groups[1].Value); if (v >= 1 && v <= 4) cbScale.SelectedIndex = v - 1; }
@@ -341,17 +345,24 @@ static class Program {
         try { Directory.CreateDirectory(artDir); } catch { }
         var cfg = Config.Load();
 
+        // Defaults are portable: the exe is looked for in a sibling pros/ or battle/
+        // folder next to the launcher, and the game data path is left blank so the
+        // first-run setup prompts for it. A saved launcher.cfg overrides both.
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string prosExe    = cfg.ContainsKey("pros_exe")    ? cfg["pros_exe"]    : Path.Combine(baseDir, "pros", "bobbleheadpros.exe");
+        string prosData   = cfg.ContainsKey("pros_data")   ? cfg["pros_data"]   : "";
+        string battleExe  = cfg.ContainsKey("battle_exe")  ? cfg["battle_exe"]  : Path.Combine(baseDir, "battle", "bobbleheadbattle.exe");
+        string battleData = cfg.ContainsKey("battle_data") ? cfg["battle_data"] : "";
+
         var games = new List<GameDef> {
             new GameDef { Key = "pros", Name = "MLB Bobblehead Pros",
-                Exe  = cfg.ContainsKey("pros_exe")  ? cfg["pros_exe"]  : @"F:\bobblehead-recomp\out\build\win-amd64-release\bobbleheadpros.exe",
-                Data = cfg.ContainsKey("pros_data") ? cfg["pros_data"] : @"F:\Games\Xbox 360\MLB Bobblehead Pros (World) (XBLA)",
+                Exe = prosExe, Data = prosData,
                 Icons = new[] { Path.Combine(artDir, "pros.png"),
-                                @"F:\Games\Xbox 360\MLB Bobblehead Pros (World) (XBLA)\TitleIcon.png" } },
+                                string.IsNullOrEmpty(prosData) ? "" : Path.Combine(prosData, "TitleIcon.png") } },
             new GameDef { Key = "battle", Name = "MLB Bobblehead Battle",
-                Exe  = cfg.ContainsKey("battle_exe")  ? cfg["battle_exe"]  : @"F:\bobblehead-battle-recomp\out\build\win-amd64-release\bobbleheadbattle.exe",
-                Data = cfg.ContainsKey("battle_data") ? cfg["battle_data"] : @"F:\Games\Xbox 360\MLB Bobblehead Battle (World) (XBLA)\extracted",
+                Exe = battleExe, Data = battleData,
                 Icons = new[] { Path.Combine(artDir, "battle.png"),
-                                @"F:\Games\Xbox 360\MLB Bobblehead Battle (World) (XBLA)\extracted\TitleIcon.png" } }
+                                string.IsNullOrEmpty(battleData) ? "" : Path.Combine(battleData, "TitleIcon.png") } }
         };
 
         // startup installed-check: walk through setup if anything is missing
@@ -395,7 +406,7 @@ static class Program {
 
         var opt = new RoundButton { Text = "Options", Size = new Size(140, 44),
             Location = new Point(w - margin - 140, h - 56) };
-        opt.Click += delegate { using (var o = new OptionsForm()) o.ShowDialog(f); };
+        opt.Click += delegate { using (var o = new OptionsForm(games)) o.ShowDialog(f); };
         f.Controls.Add(opt);
 
         var setup = new RoundButton { Text = "Setup", Size = new Size(120, 44),
