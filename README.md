@@ -7,16 +7,25 @@ Xenia‑derived runtime. No emulator and no original game binary are needed at r
 
 | Game | Title ID | Status |
 |------|----------|--------|
-| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable — boots to the main menu and into a full game, full (non‑trial) version, keyboard controls, **with audio** |
-| **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable — boots to the main menu and into a full game, full (non‑trial) version, keyboard controls. **Known issue: no audio** (see [Known issues](#known-issues)) |
+| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable — menu → full match, full (non‑trial) version, keyboard · **audio works** |
+| **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable — menu → full match, full (non‑trial) version, keyboard · ⚠️ **no audio** ([details](#known-issues)) |
 
-> ⚠️ **This is a work‑in‑progress preservation/research project.** Expect rough edges:
-> placeholder‑quality distant player faces, occasional crowd lighting artifacts, and the
-> Battle audio gap noted below.
+> ⚠️ **Work‑in‑progress preservation/research project.** You can boot both games and play a
+> full match, but expect rough edges — see [Known issues](#known-issues).
+
+## Contents
+
+- [Bring your own game files](#bring-your-own-game-files)
+- [Requirements](#requirements)
+- [Getting your game files](#getting-your-game-files)
+- [Building](#building) · [Running](#running) · [Controls](#controls-keyboard)
+- [Launcher](#launcher)
+- [Known issues](#known-issues)
+- [Repository layout](#repository-layout) · [Acknowledgements](#acknowledgements) · [Legal](#legal)
 
 ---
 
-## ❗ You must provide your own game files
+## Bring your own game files
 
 This repository contains **only the recompilation project** — manifests, the list of
 manually‑recovered functions, runtime settings, SDK patches, and build glue. It contains
@@ -197,7 +206,7 @@ achievements).
 ```
 pros/           ReXGlue project for MLB Bobblehead Pros   (manifest, functions, .toml, src/)
 battle/         ReXGlue project for MLB Bobblehead Battle
-launcher/       Windows launcher (C# / WinForms) + box art
+launcher/       Windows launcher (C# / WinForms) — Launcher.cs
 sdk-patches/    Local patches to the ReXGlue SDK required to boot and play
 ```
 
