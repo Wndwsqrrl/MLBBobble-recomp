@@ -156,14 +156,23 @@ achievements).
 
 ### Audio
 
-- **Battle has no audio at all** (menu music, SFX, crowd — nothing). This is fully diagnosed.
-  The audio stack works end to end: the sound banks load, the voice object is created and
-  passes its own integrity checks, and the audio engine runs every frame. The gap is purely
-  that Battle's high‑level game logic **never issues a "play" request** — the voice sits idle
-  with an empty request queue, so it never spins up the XMA decoder and never produces sound.
-  Pros, which runs on the same engine, triggers playback normally, so this is specific to how
-  Battle's recompiled game code drives its sound manager. On real hardware Battle *does* have
-  music, so this is a bug to fix, not intended behavior. Investigation is paused, not abandoned.
+- **Battle has no audio at all** (menu music, SFX, crowd — nothing). Root cause is now
+  localized (updated 2026‑10‑30); the earlier "never issues a play request / idle voice"
+  diagnosis was **wrong**. Instrumenting the audio engine shows Battle *does* kick its XMA
+  context and the decoder *does* run, producing real full‑scale PCM (measured peak ~1.0, same
+  as Pros), and the game *consumes* that decoded output (the XMA output ring's read offset
+  tracks the write offset). Yet every frame submitted to the render driver is pure silence
+  (measured peak 0.0 across thousands of frames, including during an actual match). Tracing the
+  render output path in the recompiled code — `sub_8226F2A0` → `sub_8226F0C0` (de‑interleaves
+  the mixed‑output buffer at `[driver+24]`, 6ch×256), then `sub_8226EE78` (ring copy, no gain),
+  then `XAudioSubmitRenderDriverFrame` — shows **nothing in the output path attenuates audio**,
+  so the XAudio2 mixed‑output buffer is *already silent* before submission. The fault is
+  therefore upstream, in Battle's guest‑side XAudio2 voice‑mixing graph: the decoded music is
+  never summed into the mastering mix (a source voice muted, never started, or not routed to the
+  mastering voice). Pros, on the identical engine, mixes through normally (decoded ~1.1 → mix
+  ~0.65). **Next step for a future push:** find where `[driver+24]` is written (the mastering
+  mix accumulator) and work back to the source voice that should carry the decoded XMA. On real
+  hardware Battle *does* have music, so this is a bug to fix, not intended behavior.
 - **Pros audio works** (menu music, SFX, commentary).
 
 ### Graphics
