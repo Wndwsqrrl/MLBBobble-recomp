@@ -17,7 +17,8 @@ render_target_path_d3d12 = "rov"
 # move/left-stick = W A S D, D-pad = Shift+Arrows, Back = Z/Tab.
 mnk_mode = true
 
-# Internal render-resolution scale (1-8; supersampling, requires restart).
-# 2 = render the 3D scene at 2x and downsample -> sharper distant faces/textures.
-# Bump to 3 or 4 for even sharper (the RTX 2080 Super handles this game easily).
-resolution_scale = 1
+# Host-side resolution (output window + guest video mode), set by the launcher's
+# Resolution picker. A preset HIGHER than your panel (1440p / 4k) renders above
+# native and downsamples for a sharper image. Presets: 720p, 1080p, 1440p, 4k,
+# or an explicit WxH. Requires restart.
+resolution = "1080p"

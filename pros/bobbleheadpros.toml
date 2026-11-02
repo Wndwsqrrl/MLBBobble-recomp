@@ -17,7 +17,14 @@ render_target_path_d3d12 = "rov"
 # move/left-stick = W A S D, D-pad = Shift+Arrows, Back = Z/Tab.
 mnk_mode = true
 
-# Internal render-resolution scale (1-8; supersampling, requires restart).
-# 2 = render the 3D scene at 2x and downsample -> sharper distant faces/textures.
-# Bump to 3 or 4 for even sharper (the RTX 2080 Super handles this game easily).
-resolution_scale = 2
+# Host-side resolution (like the 3on3 recomp): sets the output window AND the
+# guest video mode to a preset. Native panel here is 1080p; set a HIGHER preset
+# (1440p / 4k) to render above native and downsample for a sharper image (the
+# host-side equivalent of guest supersampling). Presets: 720p, 1080p, 1440p, 4k,
+# or an explicit WxH like 2560x1440. Requires restart.
+resolution = "1080p"
+
+# NOTE: this game is FRAME-LOCKED to the guest vblank, so raising
+# video_mode_refresh_rate above 60 runs the game too fast (165 -> ~2.75x speed,
+# confirmed). Leave it at the 60 default. A 165Hz display still presents the
+# 60fps output smoothly via vsync; the game logic itself can't exceed 60fps.

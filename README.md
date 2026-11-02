@@ -133,7 +133,8 @@ A standard XInput controller also works.
 together:
 - side‑by‑side game cards, greyed out until a game is installed,
 - a first‑run setup/installed‑checker that walks you through locating each game's files,
-- an options panel (vsync, keyboard mode, fullscreen, resolution scale) that writes straight
+- an options panel (vsync, keyboard mode, fullscreen, and host‑side resolution — 720p/1080p/
+  1440p/4k, where a preset above your panel downsamples for sharpness) that writes straight
   into each game's `.toml`.
 
 Build it with the .NET Framework compiler (no CMake needed):

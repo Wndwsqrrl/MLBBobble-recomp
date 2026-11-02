@@ -252,7 +252,10 @@ class SetupForm : GradientForm {
 class OptionsForm : GradientForm {
     // Each game's runtime settings live next to its exe as bobblehead<game>.toml.
     readonly string[] Tomls;
-    CheckBox cbFull, cbVsync, cbMnk; ComboBox cbScale;
+    CheckBox cbFull, cbVsync, cbMnk; ComboBox cbRes;
+    // Host-side resolution presets (the `resolution` cvar: output window + guest
+    // video mode). Higher-than-native downsamples for a sharper image.
+    static readonly string[] ResVals = { "720p", "1080p", "1440p", "4k" };
     CheckBox Make(string text, int y) {
         var c = new CheckBox { Text = text, ForeColor = Theme.Ink, Font = new Font("Segoe UI", 11),
             AutoSize = true, Location = new Point(28, y), BackColor = Color.Transparent };
@@ -274,13 +277,13 @@ class OptionsForm : GradientForm {
         cbMnk   = Make("Keyboard controls (play without a gamepad)", 98);
         cbFull  = Make("Fullscreen", 134);
 
-        var lblS = new Label { Text = "Resolution scale", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 11),
+        var lblS = new Label { Text = "Resolution", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 11),
             AutoSize = true, Location = new Point(28, 176), BackColor = Color.Transparent };
         Controls.Add(lblS);
-        cbScale = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(230, 172),
+        cbRes = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(230, 172),
             Width = 180, Font = new Font("Segoe UI", 11) };
-        cbScale.Items.AddRange(new object[] { "1x (fastest)", "2x", "3x", "4x (sharpest)" });
-        Controls.Add(cbScale);
+        cbRes.Items.AddRange(new object[] { "720p", "1080p", "1440p (downsampled)", "4K (downsampled)" });
+        Controls.Add(cbRes);
 
         LoadCurrent();
         var save = new RoundButton { Text = "Save", Size = new Size(120, 42), Location = new Point(230, 254) };
@@ -293,12 +296,12 @@ class OptionsForm : GradientForm {
         return m.Success ? m.Groups[1].Value == "true" : def;
     }
     void LoadCurrent() {
-        cbScale.SelectedIndex = 0; cbFull.Checked = true; cbVsync.Checked = true; cbMnk.Checked = true;
+        cbRes.SelectedIndex = 1; cbFull.Checked = true; cbVsync.Checked = true; cbMnk.Checked = true;
         try {
             if (Tomls.Length > 0 && File.Exists(Tomls[0])) {
                 string t = File.ReadAllText(Tomls[0]);
-                var m = Regex.Match(t, @"(?m)^\s*resolution_scale\s*=\s*(\d+)");
-                if (m.Success) { int v = int.Parse(m.Groups[1].Value); if (v >= 1 && v <= 4) cbScale.SelectedIndex = v - 1; }
+                var m = Regex.Match(t, "(?m)^\\s*resolution\\s*=\\s*\"?([0-9a-zA-Z]+)\"?");
+                if (m.Success) { int i = Array.IndexOf(ResVals, m.Groups[1].Value.ToLower()); if (i >= 0) cbRes.SelectedIndex = i; }
                 cbFull.Checked  = ReadBool(t, "fullscreen", true);
                 cbVsync.Checked = ReadBool(t, "vsync", true);
                 cbMnk.Checked   = ReadBool(t, "mnk_mode", true);
@@ -306,12 +309,12 @@ class OptionsForm : GradientForm {
         } catch { }
     }
     void Apply() {
-        int scale = cbScale.SelectedIndex + 1;
+        string res = ResVals[cbRes.SelectedIndex];
         foreach (var p in Tomls) {
             try {
                 if (!File.Exists(p)) continue;
                 string t = File.ReadAllText(p);
-                t = SetKey(t, "resolution_scale", scale.ToString());
+                t = SetKey(t, "resolution", "\"" + res + "\"");
                 t = SetKey(t, "fullscreen", cbFull.Checked ? "true" : "false");
                 t = SetKey(t, "vsync", cbVsync.Checked ? "true" : "false");
                 t = SetKey(t, "mnk_mode", cbMnk.Checked ? "true" : "false");
