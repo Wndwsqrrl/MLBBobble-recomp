@@ -11,8 +11,8 @@ Xenia‑derived runtime. No emulator and no original game binary are needed at r
 
 | Game | Title ID | Status |
 |------|----------|--------|
-| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable — menu → full match, full (non‑trial) version, keyboard · **audio works** |
-| **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable — menu → full match, full (non‑trial) version, keyboard · ⚠️ **no audio** ([details](#known-issues)) |
+| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable — menu → full match, full version, keyboard · |
+| **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable — menu → full match, full version, keyboard · ⚠️ **no audio** ([details](#known-issues)) |
 
 > ⚠️ **Work‑in‑progress preservation/research project.** You can boot both games and play a
 > full match, but expect rough edges — see [Known issues](#known-issues).
@@ -31,13 +31,8 @@ Xenia‑derived runtime. No emulator and no original game binary are needed at r
 
 ## Bring your own game files
 
-This repository contains **only the recompilation project** — manifests, the list of
-manually‑recovered functions, runtime settings, SDK patches, and build glue. It contains
-**no game code and no game assets**. To build and play you need your own legally‑obtained
+This repository contains **only the recompilation project** — To build and play you need your own legally‑obtained
 copy of each title, dumped from your Xbox 360.
-
-Nothing here distributes Konami/MLB copyrighted content, and none of it should ever be
-committed to this repo (see `.gitignore`).
 
 ---
 
@@ -144,10 +139,36 @@ Build it with the .NET Framework compiler (no CMake needed):
 csc -target:winexe -out:"MLB Bobblehead Launcher.exe" Launcher.cs
 ```
 
-The cards use box art from `launcher/art/<game>.png` if present and otherwise fall back to the
-game's own `TitleIcon.png`. The art is **not** included here (it's copyrighted store artwork) —
-drop your own `pros.png` / `battle.png` into `launcher/art/` if you want it. The launcher
-remembers your game locations in a local `launcher.cfg`.
+The cards use the box art in `launcher/art/<game>.png` (`pros.png` / `battle.png`, the games'
+Xbox 360 store art), falling back to each game's own `TitleIcon.png` if a file is missing.
+Swap in your own `pros.png` / `battle.png` to re-skin the cards. The launcher remembers your
+game locations in a local `launcher.cfg`.
+
+The launcher also accepts `--play pros` / `--play battle` to start a game directly (this is how
+the installed shortcuts launch each title); if that game isn't set up yet it opens the launcher
+so you can locate its files.
+
+## Installer
+
+[`installer/`](installer/) packages the launcher + both recompiled games into a Windows
+installer ([Inno Setup](https://jrsoftware.org/isinfo.php)) plus a portable zip. The installer
+puts everything in `Program Files`, adds **MLB Bobblehead Pros** and **MLB Bobblehead Battle**
+to the Start menu (and optionally the desktop), each with its own logo, lists both in
+*Settings → Installed apps* / *Programs and Features*, and registers a single uninstaller.
+The games still bring their own data — on first launch each shortcut opens the launcher's
+setup so you can point it at your extracted game files.
+
+Build the release artifacts (needs the games and launcher already built, and Inno Setup 6
+installed — `winget install JRSoftware.InnoSetup`):
+
+```powershell
+# from installer/ — builds setup.exe + portable.zip + SHA256SUMS.txt into installer\dist\:
+.\build-installer.ps1 -Version 1.0.0
+```
+
+The app icons (`installer/assets/*.ico`) are committed. To regenerate them from your own game
+data's `TitleIcon.png` instead, run `make-icons.ps1` first. Only `installer/dist/` (the built
+setup.exe / zip) is git-ignored.
 
 ## Known issues
 
@@ -182,15 +203,11 @@ achievements).
   black screen; the shipped configs already set `render_target_path_d3d12 = "rov"`, which fixes
   it. Leave that setting in place. AMD/Intel GPUs have had less testing — if you get a black
   frontend, try toggling that setting.
-- **Distant player models look low quality** and faces can appear blurry/placeholder‑ish when
-  the camera is far away.
 - **Crowd lighting can look off** (flat or oddly lit spectators) in some stadiums.
 - Vulkan is **not** available — only the Direct3D 12 backend is built.
 
 ### Input
 
-- **Menu navigation can need a firm, slightly held key press.** Very quick taps (especially
-  Start/Enter and the A button) are sometimes missed by the frontend; hold the key for a beat.
 - A standard XInput controller works alongside the keyboard mapping.
 
 ### Online, saves, achievements, and other system features
@@ -223,9 +240,6 @@ battle/         ReXGlue project for MLB Bobblehead Battle
 launcher/       Windows launcher (C# / WinForms) — Launcher.cs
 sdk-patches/    Local patches to the ReXGlue SDK required to boot and play
 ```
-
-Not tracked (regenerated or user‑supplied): `generated/`, build output under `out/`/`build/`,
-any `game/` data, and every `*.xex`.
 
 ## Acknowledgements
 

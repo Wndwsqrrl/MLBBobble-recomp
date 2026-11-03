@@ -340,7 +340,7 @@ static class Program {
     }
 
     [STAThread]
-    static void Main() {
+    static void Main(string[] args) {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -367,6 +367,26 @@ static class Program {
                 Icons = new[] { Path.Combine(artDir, "battle.png"),
                                 string.IsNullOrEmpty(battleData) ? "" : Path.Combine(battleData, "TitleIcon.png") } }
         };
+
+        // Direct-launch support: `--play pros` / `--play battle` runs that game
+        // straight away (used by the installed Start Menu game shortcuts) when it's
+        // set up; otherwise it falls through to the launcher so the user can locate it.
+        string playKey = null;
+        for (int i = 0; i < args.Length; i++) {
+            if (args[i] == "--play" && i + 1 < args.Length) playKey = args[i + 1].ToLowerInvariant();
+            else if (args[i].StartsWith("--play=")) playKey = args[i].Substring(7).ToLowerInvariant();
+        }
+        if (playKey != null) {
+            var pg = games.Find(gg => gg.Key == playKey);
+            if (pg != null && pg.Installed) {
+                try {
+                    var psi = new ProcessStartInfo(pg.Exe, "--game_data_root=\"" + pg.Data + "\"");
+                    psi.WorkingDirectory = Path.GetDirectoryName(pg.Exe); psi.UseShellExecute = true;
+                    Process.Start(psi);
+                    return;
+                } catch { /* fall through to the launcher window */ }
+            }
+        }
 
         // startup installed-check: walk through setup if anything is missing
         bool allOk = true; foreach (var g in games) if (!g.Installed) allOk = false;

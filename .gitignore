@@ -14,11 +14,13 @@ out/
 bin/
 obj/
 
-# Launcher: user-supplied box art, local config, and built binary
-launcher/art/
+# Launcher: local config and built binary (box art IS committed, see launcher/art/)
 launcher/launcher.cfg
 *.exe
 *.pdb
+
+# Installer: built release artifacts only (the app icons ARE committed)
+installer/dist/
 
 # Disassembler databases (Ghidra / IDA)
 *.gpr
