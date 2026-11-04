@@ -20,6 +20,23 @@ index 1cb3faa..b6c5953 100644
  };
  
  /// Create a default InputSystem with SDL + NOP drivers.
+diff --git a/include/rex/system/xam/content_manager.h b/include/rex/system/xam/content_manager.h
+index 949d185..88af724 100644
+--- a/include/rex/system/xam/content_manager.h
++++ b/include/rex/system/xam/content_manager.h
+@@ -182,6 +182,12 @@ class ContentManager {
+   // and writes a .header file for XAM enumeration.
+   X_RESULT InstallContent(const std::filesystem::path& package_path);
+ 
++  // Scans a host directory (recursively) for STFS content packages
++  // (CON/LIVE/PIRS) and installs any that are not already present, so bundled
++  // DLC / add-ons dropped there are picked up automatically at boot. Safe to
++  // call every launch; already-installed packages are skipped.
++  X_RESULT InstallContentDirectory(const std::filesystem::path& dir);
++
+  private:
+   std::filesystem::path ResolvePackageRoot(uint64_t xuid, XContentType content_type,
+                                            uint32_t title_id = -1);
 diff --git a/src/codegen/builders/vector.cpp b/src/codegen/builders/vector.cpp
 index cbdd7f7..bd889b1 100644
 --- a/src/codegen/builders/vector.cpp
@@ -197,67 +214,138 @@ index 5a572ce..3cdad7c 100644
  REX_EXPORT_STUB(__imp__XamShowAchievementsUIEx);
  REX_EXPORT_STUB(__imp__XamShowAndWaitForMessageBoxEx);
  REX_EXPORT_STUB(__imp__XamShowAvatarAwardGamesUI);
-diff --git a/src/ui/presenter.cpp b/src/ui/presenter.cpp
-index 7360ed9..6566267 100644
---- a/src/ui/presenter.cpp
-+++ b/src/ui/presenter.cpp
-@@ -12,7 +12,9 @@
- #include <algorithm>
- #include <atomic>
- #include <cctype>
-+#include <cstdio>
- #include <utility>
-+#include <vector>
+diff --git a/src/system/xam/content_manager.cpp b/src/system/xam/content_manager.cpp
+index bd6c797..54ad54b 100644
+--- a/src/system/xam/content_manager.cpp
++++ b/src/system/xam/content_manager.cpp
+@@ -19,6 +19,7 @@
+ #include <rex/filesystem.h>
+ #include <rex/filesystem/devices/host_path_device.h>
+ #include <rex/filesystem/devices/stfs_container_device.h>
++#include <rex/logging.h>
+ #include <rex/string.h>
+ #include <rex/system/kernel_state.h>
+ #include <rex/system/xam/content_device.h>
+@@ -643,6 +644,56 @@ X_RESULT ContentManager::InstallContent(const std::filesystem::path& package_pat
+   return WriteContentHeaderFile(0, content_data, license_mask);
+ }
  
- #include <rex/assert.h>
- #include <rex/cvar.h>
-@@ -426,6 +428,41 @@ void Presenter::PaintFromUIThread(bool force_paint) {
-     return;
-   }
++X_RESULT ContentManager::InstallContentDirectory(const std::filesystem::path& dir) {
++  std::error_code ec;
++  if (!std::filesystem::is_directory(dir, ec)) {
++    return X_ERROR_FILE_NOT_FOUND;
++  }
++
++  for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
++       !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
++    if (!it->is_regular_file(ec)) {
++      continue;
++    }
++    const auto& pkg_path = it->path();
++
++    // STFS/XContent packages begin with 'CON ', 'LIVE' or 'PIRS'. Skip anything
++    // else (readme/text files, archives, etc.) without touching it.
++    char magic[4] = {0, 0, 0, 0};
++    auto file = rex::filesystem::OpenFile(pkg_path, "rb");
++    if (!file) {
++      continue;
++    }
++    size_t read = fread(magic, 1, sizeof(magic), file);
++    fclose(file);
++    if (read != sizeof(magic)) {
++      continue;
++    }
++    std::string_view magic_view(magic, sizeof(magic));
++    if (magic_view != "CON " && magic_view != "LIVE" && magic_view != "PIRS") {
++      continue;
++    }
++
++    // Skip packages already installed into the content tree (keyed the same way
++    // InstallContent writes them: marketplace content, current title, xuid 0).
++    XCONTENT_AGGREGATE_DATA data;
++    data.device_id = static_cast<uint32_t>(DummyDeviceId::HDD);
++    data.content_type = XContentType::kMarketplaceContent;
++    data.title_id = kernel_state_->title_id();
++    data.xuid = 0;
++    data.set_file_name(rex::path_to_utf8(pkg_path.filename()));
++    if (ContentExists(0, data)) {
++      continue;
++    }
++
++    auto result = InstallContent(pkg_path);
++    REXSYS_INFO("ContentManager: installed add-on package '{}' (0x{:08X})",
++                rex::path_to_utf8(pkg_path.filename()), static_cast<uint32_t>(result));
++  }
++
++  return X_ERROR_SUCCESS;
++}
++
+ }  // namespace xam
+ }  // namespace system
+ }  // namespace rex
+diff --git a/src/ui/d3d12/d3d12_provider.cpp b/src/ui/d3d12/d3d12_provider.cpp
+index bf8252b..b58c56c 100644
+--- a/src/ui/d3d12/d3d12_provider.cpp
++++ b/src/ui/d3d12/d3d12_provider.cpp
+@@ -20,6 +20,8 @@
  
-+  // --- REX debug: sentinel-file triggered guest-output screenshot (BMP) ---
-+  {
-+    const char* kShoot = "F:/bobblehead-recomp/out/SHOOT";
-+    if (std::FILE* sf = std::fopen(kShoot, "rb")) {
-+      std::fclose(sf);
-+      std::remove(kShoot);
-+      RawImage img;
-+      if (CaptureGuestOutput(img) && img.width && img.height && !img.data.empty()) {
-+        uint32_t w = img.width, h = img.height;
-+        uint32_t row = w * 3u;
-+        uint32_t pad = (4u - (row & 3u)) & 3u;
-+        uint32_t dataSize = (row + pad) * h;
-+        uint32_t fileSize = 54u + dataSize;
-+        std::vector<uint8_t> bmp(fileSize, 0);
-+        auto put16 = [&](uint32_t off, uint16_t v){ bmp[off]=v&0xFF; bmp[off+1]=(v>>8)&0xFF; };
-+        auto put32 = [&](uint32_t off, uint32_t v){ bmp[off]=v&0xFF; bmp[off+1]=(v>>8)&0xFF; bmp[off+2]=(v>>16)&0xFF; bmp[off+3]=(v>>24)&0xFF; };
-+        bmp[0]='B'; bmp[1]='M'; put32(2,fileSize); put32(10,54);
-+        put32(14,40); put32(18,w); put32(22,h); put16(26,1); put16(28,24); put32(34,dataSize);
-+        for (uint32_t y=0; y<h; ++y) {
-+          const uint8_t* src = img.data.data() + (size_t)y * img.stride;
-+          uint8_t* dst = bmp.data() + 54 + (size_t)(h-1-y)*(row+pad);
-+          for (uint32_t x=0; x<w; ++x) {
-+            dst[x*3+0] = src[x*4+2]; // B
-+            dst[x*3+1] = src[x*4+1]; // G
-+            dst[x*3+2] = src[x*4+0]; // R
-+          }
+ #include <malloc.h>
+ 
++#include <dxgi1_6.h>
++
+ REXCVAR_DEFINE_BOOL(d3d12_debug, false, "UI/D3D12", "Enable Direct3D 12 and DXGI debug layer")
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ 
+@@ -253,7 +255,35 @@ bool D3D12Provider::Initialize() {
+   // Choose the adapter.
+   uint32_t adapter_index = 0;
+   IDXGIAdapter1* adapter = nullptr;
+-  while (dxgi_factory->EnumAdapters1(adapter_index, &adapter) == S_OK) {
++
++  // With no explicit adapter requested (-1, the default), prefer the system's
++  // high-performance GPU through DXGI 1.6 so hybrid laptops render on the
++  // discrete GPU instead of defaulting to the integrated one. Falls through to
++  // the plain enumeration below on older Windows or if nothing suitable is found.
++  if (REXCVAR_GET(d3d12_adapter) == -1) {
++    IDXGIFactory6* dxgi_factory6 = nullptr;
++    if (SUCCEEDED(dxgi_factory->QueryInterface(IID_PPV_ARGS(&dxgi_factory6))) && dxgi_factory6) {
++      for (UINT hp_index = 0;
++           dxgi_factory6->EnumAdapterByGpuPreference(hp_index,
++                                                     DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
++                                                     IID_PPV_ARGS(&adapter)) == S_OK;
++           ++hp_index) {
++        DXGI_ADAPTER_DESC1 hp_desc;
++        if (SUCCEEDED(adapter->GetDesc1(&hp_desc)) &&
++            !(hp_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) &&
++            SUCCEEDED(pfn_d3d12_create_device_(adapter, D3D_FEATURE_LEVEL_11_0,
++                                               _uuidof(ID3D12Device), nullptr))) {
++          REXGPU_INFO("Selected high-performance DXGI adapter via GPU preference");
++          break;
 +        }
-+        if (std::FILE* of = std::fopen("F:/bobblehead-recomp/out/guest.bmp","wb")) {
-+          std::fwrite(bmp.data(),1,bmp.size(),of); std::fclose(of);
-+        }
++        adapter->Release();
++        adapter = nullptr;
 +      }
++      dxgi_factory6->Release();
 +    }
 +  }
-+  // --- end REX debug ---
 +
-   // Defer changes to the paint mode as well as window paint requests, and do
-   // them in this function so they're consistent with the assumptions made here.
-   assert_false(is_in_ui_thread_paint_);
++  while (adapter == nullptr && dxgi_factory->EnumAdapters1(adapter_index, &adapter) == S_OK) {
+     DXGI_ADAPTER_DESC1 adapter_desc;
+     if (SUCCEEDED(adapter->GetDesc1(&adapter_desc))) {
+       if (SUCCEEDED(pfn_d3d12_create_device_(adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device),
 diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
-index b94fe9e..194b0ff 100644
+index b94fe9e..fefdb2f 100644
 --- a/src/ui/rex_app.cpp
 +++ b/src/ui/rex_app.cpp
-@@ -51,6 +51,10 @@ REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
+@@ -34,6 +34,7 @@
+ #include <rex/system/achievement_manager.h>
+ #include <rex/system/gpu_plugin.h>
+ #include <rex/system/kernel_state.h>
++#include <rex/system/xam/content_manager.h>
+ #include <rex/system/xthread.h>
+ #include <rex/ui/graphics_provider.h>
+ #include <rex/ui/keybinds.h>
+@@ -51,6 +52,10 @@ REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
                        "GPU emulation")
      .lifecycle(rex::cvar::Lifecycle::kInitOnly);
  
@@ -268,7 +356,24 @@ index b94fe9e..194b0ff 100644
  namespace rex {
  
  // --- ReXApp ---
-@@ -314,7 +318,7 @@ bool ReXApp::SetupPresentation() {
+@@ -248,6 +253,16 @@ bool ReXApp::ConstructRuntime(const PathConfig& paths) {
+     ppc_info_.register_modules(runtime_->kernel_state());
+   }
+ 
++  // Auto-install any add-on / DLC packages dropped in <game_data_root>/dlc so
++  // the title can enumerate them through XAM. Runs before the XEX starts; it is
++  // idempotent (already-installed packages are skipped) and a no-op when the
++  // folder is absent.
++  if (auto* ks = runtime_->kernel_state()) {
++    if (auto* cm = ks->content_manager()) {
++      cm->InstallContentDirectory(game_data_root_ / "dlc");
++    }
++  }
++
+   if (imgui_drawer_) {
+     auto* input_sys = static_cast<rex::input::InputSystem*>(runtime_->input_system());
+     if (input_sys) {
+@@ -314,7 +329,7 @@ bool ReXApp::SetupPresentation() {
    OnPreSetup(config_);
  
    if (!config_.graphics && !config_.gpu_plugin.empty()) {

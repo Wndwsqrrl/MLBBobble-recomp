@@ -43,6 +43,9 @@ copy of each title, dumped from your Xbox 360.
 - A Direct3D 12‑capable GPU
   - On **NVIDIA** GPUs the default render path renders black — the included configs already
     select the ROV path (`render_target_path_d3d12 = "rov"`); keep it.
+  - On **hybrid laptops** (integrated + discrete GPU) the game now auto‑selects the
+    high‑performance (discrete) GPU, so no per‑app Windows graphics preference is needed.
+    To force a specific adapter anyway, set `d3d12_adapter` (0‑based index) in the `.toml`.
 - Your extracted game data (below)
 
 **To build:**
@@ -136,7 +139,7 @@ Build it with the .NET Framework compiler (no CMake needed):
 
 ```bash
 # from launcher/
-csc -target:winexe -out:"MLB Bobblehead Launcher.exe" Launcher.cs
+csc -target:winexe -out:"MLB Bobblehead Launcher.exe" -r:System.IO.Compression.dll -r:System.IO.Compression.FileSystem.dll Launcher.cs
 ```
 
 The cards use the box art in `launcher/art/<game>.png` (`pros.png` / `battle.png`, the games'
@@ -169,6 +172,31 @@ installed — `winget install JRSoftware.InnoSetup`):
 The app icons (`installer/assets/*.ico`) are committed. To regenerate them from your own game
 data's `TitleIcon.png` instead, run `make-icons.ps1` first. Only `installer/dist/` (the built
 setup.exe / zip) is git-ignored.
+
+## Add-ons (DLC & roster updates)
+
+Both games' Xbox Live add-ons — the **Bobblehead Stars** DLC and the periodic **roster
+updates** — are distributed as Xbox **STFS content packages** (the `58410B7x\00000002\<hash>`
+file inside each add-on download). The recomp loads them through the console's normal content
+(XContent) path, so no patching is needed — they just have to be installed into the game's
+content tree.
+
+Two ways to install:
+
+- **Launcher (recommended).** Options → **Install add-on…**, then pick the add-on's package
+  file (or its `.zip` / `.7z` archive). The launcher finds the package, reads its title ID, and
+  copies it into the correct game's `dlc` folder automatically.
+- **By hand.** Drop the STFS package file into a `dlc` folder at the root of that game's data,
+  i.e. `…\MLB Bobblehead Pros (World) (XBLA)\dlc\<package>`. Create the `dlc` folder if it isn't
+  there. Multiple packages are fine.
+
+On the next launch the runtime scans `<game_data_root>\dlc`, installs any new packages into the
+content tree (`0000000000000000\<title id>\00000002\…`), and the game enumerates them like it
+would on a real console. Re-installing is harmless — already-installed packages are skipped.
+
+> Add-ons are **not** included in this repo — bring your own, dumped from your own Xbox Live
+> purchases. Getting a title's add-on to visibly change the game (new bobbleheads, updated
+> rosters) is still being validated per title.
 
 ## Known issues
 
@@ -221,9 +249,10 @@ achievements).
 - **Achievements are headless.** The Achievements screen opens and closes immediately (it is
   stubbed to prevent a freeze that happened when the real Xbox achievements blade was invoked),
   so there is no achievement UI and nothing is unlocked/tracked.
-- **DLC / roster updates are data‑only.** The add‑on files can be dropped into the game's
-  `cdvdroot` tree, but they have not been fully wired into the loading flow and are untested in
-  this release.
+- **DLC / roster updates** are installed from their Xbox Live add‑on packages — see
+  [Add‑ons (DLC & roster updates)](#add-ons-dlc--roster-updates). The content is enumerated
+  through the normal XContent path at boot; in‑game results depend on the title and are still
+  being validated.
 
 ### Performance
 

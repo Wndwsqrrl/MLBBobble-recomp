@@ -8,6 +8,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Linq;
 
 static class Theme {
     public static Color Blue   = Color.FromArgb(46, 74, 214);
@@ -252,7 +253,13 @@ class SetupForm : GradientForm {
 class OptionsForm : GradientForm {
     // Each game's runtime settings live next to its exe as bobblehead<game>.toml.
     readonly string[] Tomls;
+    readonly List<GameDef> _games;
     CheckBox cbFull, cbVsync, cbMnk; ComboBox cbRes;
+    // Xbox title IDs -> launcher game key, used to route an add-on package to
+    // the game it belongs to.
+    static readonly Dictionary<uint, string> TitleIdToKey = new Dictionary<uint, string> {
+        { 0x58410B7Bu, "pros" }, { 0x58410B7Cu, "battle" },
+    };
     // Host-side resolution presets (the `resolution` cvar: output window + guest
     // video mode). Higher-than-native downsamples for a sharper image.
     static readonly string[] ResVals = { "720p", "1080p", "1440p", "4k" };
@@ -268,7 +275,8 @@ class OptionsForm : GradientForm {
             try { tomls.Add(Path.ChangeExtension(g.Exe, ".toml")); } catch { }
         }
         Tomls = tomls.ToArray();
-        Text = "Options"; ClientSize = new Size(440, 332);
+        _games = games;
+        Text = "Options"; ClientSize = new Size(440, 392);
         var head = new Label { Text = "Options", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 15),
             AutoSize = true, Location = new Point(26, 18), BackColor = Color.Transparent };
         Controls.Add(head);
@@ -285,11 +293,119 @@ class OptionsForm : GradientForm {
         cbRes.Items.AddRange(new object[] { "720p", "1080p", "1440p (downsampled)", "4K (downsampled)" });
         Controls.Add(cbRes);
 
+        var lblA = new Label { Text = "Add-ons (DLC / roster updates)", ForeColor = Theme.Ink,
+            Font = new Font("Segoe UI", 11), AutoSize = true, Location = new Point(28, 216),
+            BackColor = Color.Transparent };
+        Controls.Add(lblA);
+        var addon = new RoundButton { Text = "Install add-on\u2026", Size = new Size(180, 40),
+            Location = new Point(28, 244) };
+        addon.Click += delegate { InstallAddons(); };
+        Controls.Add(addon);
+        var lblAh = new Label { Text = "Pick the add-on's package or .7z/.zip; it installs to the\nright game and loads next launch.",
+            ForeColor = Theme.Muted, Font = new Font("Segoe UI", 8.5f), AutoSize = true,
+            Location = new Point(28, 288), BackColor = Color.Transparent };
+        Controls.Add(lblAh);
+
         LoadCurrent();
-        var save = new RoundButton { Text = "Save", Size = new Size(120, 42), Location = new Point(230, 254) };
+        var save = new RoundButton { Text = "Save", Size = new Size(120, 42), Location = new Point(230, 332) };
         save.Click += delegate { Apply(); Close(); }; Controls.Add(save);
-        var cancel = new RoundButton { Text = "Cancel", Size = new Size(120, 42), Location = new Point(90, 254) };
+        var cancel = new RoundButton { Text = "Cancel", Size = new Size(120, 42), Location = new Point(90, 332) };
         cancel.Click += delegate { Close(); }; Controls.Add(cancel);
+    }
+
+    // Install one or more add-on packages (DLC or roster updates). Accepts raw
+    // STFS packages or .zip/.7z archives, finds the STFS package(s) inside, and
+    // copies each into the matching game's data\dlc folder (routed by the
+    // package's embedded title ID). The runtime auto-installs them at next boot.
+    void InstallAddons() {
+        using (var ofd = new OpenFileDialog()) {
+            ofd.Title = "Select add-on package(s) or archive(s)";
+            ofd.Filter = "Add-ons (*.7z;*.zip;package)|*.7z;*.zip;*.*|All files|*.*";
+            ofd.Multiselect = true;
+            if (ofd.ShowDialog(this) != DialogResult.OK) return;
+
+            int installed = 0; var problems = new List<string>(); string temp = null;
+            try {
+                temp = Path.Combine(Path.GetTempPath(), "mlbbobble_addon_" + Guid.NewGuid().ToString("N"));
+                foreach (var picked in ofd.FileNames) {
+                    foreach (var pkg in CollectPackages(picked, temp, problems)) {
+                        uint tid = StfsTitleId(pkg);
+                        string key;
+                        if (!TitleIdToKey.TryGetValue(tid, out key)) {
+                            problems.Add(Path.GetFileName(pkg) + ": not an MLB Bobblehead add-on"); continue;
+                        }
+                        var g = _games.Find(x => x.Key == key);
+                        if (g == null || string.IsNullOrEmpty(g.Data)) {
+                            problems.Add(Path.GetFileName(pkg) + ": " + key + " isn't set up yet"); continue;
+                        }
+                        try {
+                            string dlc = Path.Combine(g.Data, "dlc");
+                            Directory.CreateDirectory(dlc);
+                            File.Copy(pkg, Path.Combine(dlc, Path.GetFileName(pkg)), true);
+                            installed++;
+                        } catch (Exception ex) { problems.Add(Path.GetFileName(pkg) + ": " + ex.Message); }
+                    }
+                }
+            } finally {
+                try { if (temp != null && Directory.Exists(temp)) Directory.Delete(temp, true); } catch { }
+            }
+
+            string msg = installed + " add-on package(s) installed." +
+                (installed > 0 ? "\nRestart the game to load them." : "");
+            if (problems.Count > 0) msg += "\n\nSkipped:\n  " + string.Join("\n  ", problems.ToArray());
+            MessageBox.Show(this, msg, "Add-ons",
+                MessageBoxButtons.OK, installed > 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+    }
+
+    // Returns the STFS package files contained in `picked`: the file itself if it
+    // already is one, or the packages found inside a .zip/.7z archive.
+    static List<string> CollectPackages(string picked, string tempRoot, List<string> problems) {
+        var found = new List<string>();
+        string ext = Path.GetExtension(picked).ToLowerInvariant();
+        if (ext == ".zip" || ext == ".7z") {
+            string dest = Path.Combine(tempRoot, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dest);
+            try {
+                if (ext == ".zip") {
+                    System.IO.Compression.ZipFile.ExtractToDirectory(picked, dest);
+                } else {
+                    string sz = new[] { @"C:\Program Files\7-Zip\7z.exe", @"C:\Program Files (x86)\7-Zip\7z.exe" }
+                        .FirstOrDefault(File.Exists);
+                    if (sz == null) { problems.Add(Path.GetFileName(picked) + ": 7-Zip not found \u2014 extract it first"); return found; }
+                    var psi = new ProcessStartInfo(sz, "x \"" + picked + "\" -o\"" + dest + "\" -y") {
+                        UseShellExecute = false, CreateNoWindow = true };
+                    using (var p = Process.Start(psi)) p.WaitForExit();
+                }
+            } catch (Exception ex) { problems.Add(Path.GetFileName(picked) + ": " + ex.Message); return found; }
+            foreach (var f in Directory.GetFiles(dest, "*", SearchOption.AllDirectories))
+                if (IsStfs(f)) found.Add(f);
+        } else {
+            if (IsStfs(picked)) found.Add(picked);
+            else problems.Add(Path.GetFileName(picked) + ": not an Xbox content package");
+        }
+        return found;
+    }
+
+    static bool IsStfs(string path) {
+        try {
+            byte[] b = new byte[4];
+            using (var fs = File.OpenRead(path)) { if (fs.Read(b, 0, 4) != 4) return false; }
+            string m = System.Text.Encoding.ASCII.GetString(b);
+            return m == "CON " || m == "LIVE" || m == "PIRS";
+        } catch { return false; }
+    }
+
+    // Xbox content title ID lives at offset 0x360 (big-endian u32) in the header.
+    static uint StfsTitleId(string path) {
+        try {
+            using (var fs = File.OpenRead(path)) {
+                byte[] b = new byte[4];
+                fs.Seek(0x360, SeekOrigin.Begin);
+                if (fs.Read(b, 0, 4) != 4) return 0;
+                return ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
+            }
+        } catch { return 0; }
     }
     static bool ReadBool(string t, string key, bool def) {
         var m = Regex.Match(t, @"(?m)^\s*" + Regex.Escape(key) + @"\s*=\s*(true|false)");
