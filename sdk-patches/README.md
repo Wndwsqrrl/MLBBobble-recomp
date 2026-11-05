@@ -20,19 +20,12 @@ Then rebuild + reinstall the SDK and rebuild the app:
 - `src/kernel/xboxkrnl/xboxkrnl_video.cpp`, `src/input/input_system.*`,
   `src/codegen/builders/vector.cpp` — pre-existing setup fixes (input lock,
   vector builder) carried from SDK install.
-- `src/ui/rex_app.cpp` — adds a `gpu_backend` cvar (any/d3d12/vulkan); also
-  auto-installs add-on packages found in `<game_data_root>/dlc` at boot (see
-  below).
+- `src/ui/rex_app.cpp` — adds a `gpu_backend` cvar (any/d3d12/vulkan).
 - `src/ui/d3d12/d3d12_provider.cpp` — when no adapter is forced (`d3d12_adapter`
   = -1, the default), pick the system's **high-performance** GPU via DXGI 1.6
   (`EnumAdapterByGpuPreference`) so hybrid laptops render on the discrete GPU
   instead of the integrated one. (The matching NvOptimus/AMD exports live in
   each game's `src/main.cpp`, because they are only honored from the exe.)
-- `src/system/xam/content_manager.{h,cpp}` — add `InstallContentDirectory()`,
-  which scans a folder for STFS packages (CON/LIVE/PIRS) and installs any not
-  already present via the existing `InstallContent`. Called from `rex_app.cpp`
-  so DLC / roster-update packages dropped in `<game_data_root>/dlc` are picked
-  up automatically. Idempotent across boots.
 - `src/kernel/xam/xam_content.cpp`, `xam_content_aggregate.cpp` — report one
   dummy savegame when none exists so the game stops looping the storage
   selector at the splash and reaches the main menu.
