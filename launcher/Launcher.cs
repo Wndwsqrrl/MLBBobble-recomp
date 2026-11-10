@@ -1031,6 +1031,13 @@ static class Program {
         bool allOk = true; foreach (var g in games) if (!g.Installed) allOk = false;
         if (!allOk) { using (var s = new SetupForm(games)) s.ShowDialog(); Config.Save(games); }
 
+        var main = BuildMainForm(games);
+        Logs.Write("launcher " + AppInfo.Version + " started" + (playKey != null ? " (--play " + playKey + ")" : ""));
+        Application.Run(main);
+    }
+
+    // The launcher's main window (game cards, Setup, Options, Report a problem).
+    public static GradientForm BuildMainForm(List<GameDef> games) {
         int cw = 300, ch = 410, gap = 36, margin = 40, top = 92;
         int w = margin * 2 + cw * 2 + gap;
         int h = top + ch + 82;
@@ -1098,8 +1105,6 @@ static class Program {
             }
         };
         f.Controls.Add(report);
-
-        Logs.Write("launcher " + AppInfo.Version + " started" + (playKey != null ? " (--play " + playKey + ")" : ""));
-        Application.Run(f);
+        return f;
     }
 }

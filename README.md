@@ -17,9 +17,22 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 > ⚠️ **v0.1.0 is an early release of the base games** (no roster updates or DLC). Both games
 > play full matches, but expect rough edges; see [Known issues](#known-issues).
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="57%"><img src="docs/screenshots/launcher.png" alt="The launcher with both games"></td>
+    <td><img src="docs/screenshots/launcher-setup.png" alt="Setup: each game's folder, checked against the expected version"></td>
+  </tr>
+  <tr>
+    <td align="center">The launcher</td>
+    <td align="center">Setup checks your game files</td>
+  </tr>
+</table>
+
 ## Contents
 
-- [Quick start](#quick-start) · [What's in the download](#whats-in-the-download)
+- [Screenshots](#screenshots) · [Quick start](#quick-start) · [What's in the download](#whats-in-the-download)
 - [Requirements](#requirements) · [Getting your game files](#getting-your-game-files)
 - [Controls](#controls) · [Launcher](#launcher) · [Reporting issues](#reporting-issues)
 - [Building from source](#building-from-source)
