@@ -13,7 +13,6 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 |------|----------|--------|
 | **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable: menus to full matches, full version, keyboard or controller |
 | **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable: menus to full matches · ⚠️ **no audio** ([details](#known-issues)) |
-| Pros on Android | | 🧪 Experimental: builds and boots to the loading screen, not playable yet ([details](#android-pros-only-experimental)) |
 
 > ⚠️ **v0.1.0 is an early release of the base games** (no roster updates or DLC). Both games
 > play full matches, but expect rough edges; see [Known issues](#known-issues).
@@ -22,8 +21,8 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 
 - [Quick start](#quick-start) · [What's in the download](#whats-in-the-download)
 - [Requirements](#requirements) · [Getting your game files](#getting-your-game-files)
-- [Controls](#controls) · [Launcher](#launcher) · [Reporting a problem](#reporting-a-problem)
-- [Building from source](#building-from-source) · [Android](#android-pros-only-experimental)
+- [Controls](#controls) · [Launcher](#launcher) · [Reporting issues](#reporting-issues)
+- [Building from source](#building-from-source)
 - [Known issues](#known-issues) · [Repository layout](#repository-layout)
 - [Acknowledgements](#acknowledgements) · [Legal](#legal)
 
@@ -103,19 +102,27 @@ The launcher (`MLB Bobblehead Launcher.exe`) ties both games together:
 
 It remembers your game folders in `launcher.cfg` next to the launcher.
 
-## Reporting a problem
+## Reporting issues
 
-If something goes wrong, click **Report a problem** in the launcher. It saves one zip to your
-Desktop with:
+Found a crash, a freeze, a graphics problem or anything else that seems wrong? Please report
+it on the [Issues page](https://github.com/Wndwsqrrl/MLBBobble-recomp/issues). Check the
+[Known issues](#known-issues) first; those are already being looked at.
 
-- your most recent game logs and the launcher's log,
-- a short system summary (Windows version, CPU, RAM, GPU and driver) and whether your
-  `default.xex` matched the expected version,
-- both games' settings files.
+1. **Reproduce it if you can**, then close the game.
+2. In the launcher, click **Report a problem**. It saves a zip to your Desktop and opens the
+   folder.
+3. **Open a new issue** and include:
+   - which game (Pros or Battle),
+   - what you were doing when it happened (menu, game mode, inning, stadium...),
+   - what you expected and what happened instead (a screenshot or short clip helps),
+   - whether it happens every time,
+   - the report zip, attached to the issue.
 
-Your Windows user name is removed from everything in it, and it contains no game files or
-saves. Attach it to an [issue](https://github.com/Wndwsqrrl/MLBBobble-recomp/issues) with a
-short description of what happened.
+**What the report contains:** your most recent game logs and the launcher's log, a short system
+summary (Windows version, CPU, RAM, GPU and driver, and whether your `default.xex` matched the
+expected version) and both games' settings files. Your Windows user name is removed from
+everything in it, and it contains no game files or saves. Please don't attach game files to an
+issue.
 
 The logs themselves are in `Documents\bobbleheadpros\logs\`: one file per game session (the
 last 10 per game are kept) and `launcher.log`.
@@ -167,36 +174,6 @@ csc -target:winexe -out:"MLB Bobblehead Launcher.exe" -r:System.Windows.Forms.dl
 installer\build-installer.ps1 -Version 0.1.0   # setup.exe, portable zip, SHA256SUMS.txt in installer\dist\
 ```
 
-## Android (Pros only, experimental)
-
-Pros can also be built as an Android app (arm64, Android 11+, Vulkan) from your own copy of the
-game. **Status:** it builds, installs and boots to the game's loading screen on a test tablet,
-but is not playable yet.
-
-1. Apply **both** SDK patches (`sdk-patches/rexglue-sdk-local.patch`, then
-   `sdk-patches/rexglue-sdk-android.patch`), build and install the SDK for Windows, and build
-   the Windows version of Pros once (that runs the code generator).
-2. Install Android Studio and, in its SDK Manager, an **NDK**, **CMake**, build-tools and a
-   platform.
-3. Build the Android runtime, the game and the APK in one go:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File pros\android\build_android.ps1 -SdkSource <rexglue-sdk>
-   ```
-
-   This produces `pros\android\out\MLBBobbleheadPros.apk` (`-Install` also runs `adb install`).
-4. Install it, open it once, then copy your game files into the app's folder:
-
-   ```powershell
-   adb push "<game folder>\default.xex" /sdcard/Android/data/com.mlbbobblehead.pros/files/game/
-   adb push "<game folder>\data"        /sdcard/Android/data/com.mlbbobblehead.pros/files/game/
-   ```
-
-   Saves go to `files/user` and the log to `files/logs/bobbleheadpros.log`.
-
-Use a Bluetooth or USB controller; there are no touch controls yet. The APK is not part of the
-releases: build it yourself.
-
 ## Known issues
 
 ### Audio
@@ -239,7 +216,6 @@ releases: build it yourself.
 
 ```
 pros/            ReXGlue project for MLB Bobblehead Pros (manifest, .toml, src/)
-pros/android/    Android app shell and build_android.ps1
 battle/          ReXGlue project for MLB Bobblehead Battle
 launcher/        Windows launcher (Launcher.cs) and box art
 installer/       Inno Setup script, icons and build-installer.ps1
