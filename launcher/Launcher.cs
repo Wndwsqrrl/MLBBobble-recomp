@@ -70,45 +70,203 @@ static class Config {
     }
 }
 
-// Roster update for MLB Bobblehead Pros: the Oct 2011 title-content package (an
-// Xbox 360 STFS file, "MLB Bobblehead Pros - Roster Update Oct.11") carries two
-// replacement roster files. The game never mounts the package itself, so the
-// launcher copies them over the base rosters in the game folder, keeping the
-// originals in <game>\_roster_backup\ so the change can be undone.
-static class RosterUpdate {
-    const uint TitleId = 0x58410B7B;
-    const int Block = 0x1000;
-    // package path -> path in the game folder (relative to the folder with default.xex)
-    static readonly string[,] Files = {
-        { "data/xbox360_us/player/data/PLAYER_DATA_OCT2011.CHK",
-          @"data\xbox360_us\player\data\PLAYER_DATA.CHK" },
-        { "data/xbox360_us/player/season_data/SEASON_PLAYER_DATA_OCT2011.CHK",
-          @"data\xbox360_us\player\season_data\SEASON_PLAYER_DATA.CHK" },
+// Season rosters for MLB Bobblehead Pros. A roster is two files the game reads from
+// its folder: player\data\PLAYER_DATA.CHK (player records + the 30 team rosters and
+// both All-Star squads) and player\season_data\SEASON_PLAYER_DATA.CHK (season stats).
+// The launcher keeps any number of them in <game>\_rosters\<id>\ (the two files plus
+// roster.txt holding the display name) and switches by copying a set into place.
+class RosterSet {
+    public string Id, Name, Dir;
+    public override string ToString() { return Name; }
+}
+
+static class RosterLibrary {
+    // Paths inside the game folder (the one with default.xex).
+    public static readonly string[] GamePaths = {
+        @"data\xbox360_us\player\data\PLAYER_DATA.CHK",
+        @"data\xbox360_us\player\season_data\SEASON_PLAYER_DATA.CHK",
     };
+    public static string FileName(int i) { return Path.GetFileName(GamePaths[i]); }
 
-    static string BackupDir(string data) { return Path.Combine(data, "_roster_backup"); }
+    // SHA-256 of the two official rosters, so they are recognised wherever they come from.
+    const string OriginalPlayer = "A7F1B123C5D7D351FB24D07086EDDA131CD6150D5CBDC249274D0C2C277D1BC7";
+    const string OriginalSeason = "14C3B66A8FEF514FA902181E30264E212DFE7AC21F06398FA881F819B5DA7DE8";
+    const string Oct2011Player  = "F213D9CBD494881E1795A8C26255214046A4C98B3CDF2D20B0EEB565A106D193";
+    const string Oct2011Season  = "215A6DF6BD8AC71DFA51023385B2B3C81DA442C2FD6D2A177FC2D02D299A4B85";
+    public const string OriginalName = "2011 Opening Day (original)";
+    public const string Oct2011Name  = "2011 End of season (Oct 2011 update)";
 
-    public static bool IsApplied(string data) {
-        try {
-            for (int i = 0; i < Files.GetLength(0); i++) {
-                string target = Path.Combine(data, Files[i, 1]);
-                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
-                if (!File.Exists(target) || !File.Exists(backup)) return false;
-                if (SameBytes(target, backup)) return false;
-            }
-            return true;
-        } catch { return false; }
+    static string Root(string data) { return Path.Combine(data, "_rosters"); }
+
+    static string Sha(byte[] b) {
+        using (var h = System.Security.Cryptography.SHA256.Create())
+            return BitConverter.ToString(h.ComputeHash(b)).Replace("-", "");
     }
 
-    static bool SameBytes(string a, string b) {
-        var x = File.ReadAllBytes(a); var y = File.ReadAllBytes(b);
-        if (x.Length != y.Length) return false;
-        for (int i = 0; i < x.Length; i++) if (x[i] != y[i]) return false;
+    // Which official roster a pair of files is, if any.
+    static string Known(byte[] player, byte[] season, out string name) {
+        string p = Sha(player), s = Sha(season);
+        if (p == OriginalPlayer && s == OriginalSeason) { name = OriginalName; return "original"; }
+        if (p == Oct2011Player && s == Oct2011Season) { name = Oct2011Name; return "oct2011"; }
+        name = null; return null;
+    }
+
+    static byte[][] ReadGame(string data) {
+        return new[] { File.ReadAllBytes(Path.Combine(data, GamePaths[0])),
+                       File.ReadAllBytes(Path.Combine(data, GamePaths[1])) };
+    }
+
+    static bool Same(byte[] a, byte[] b) {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
         return true;
     }
 
-    // Returns null on success, otherwise a message for the user.
-    public static string Apply(string package, string data) {
+    static RosterSet Save(string data, string id, string name, byte[][] files) {
+        string dir = Path.Combine(Root(data), id);
+        Directory.CreateDirectory(dir);
+        for (int i = 0; i < 2; i++) File.WriteAllBytes(Path.Combine(dir, FileName(i)), files[i]);
+        File.WriteAllText(Path.Combine(dir, "roster.txt"), "name=" + name + "\r\n");
+        return new RosterSet { Id = id, Name = name, Dir = dir };
+    }
+
+    static string UniqueId(string data, string baseId) {
+        string id = baseId; int n = 2;
+        while (Directory.Exists(Path.Combine(Root(data), id))) id = baseId + "-" + n++;
+        return id;
+    }
+
+    static string Slug(string name) {
+        var sb = new StringBuilder();
+        foreach (char c in name.ToLowerInvariant())
+            sb.Append(char.IsLetterOrDigit(c) ? c : '-');
+        string s = Regex.Replace(sb.ToString(), "-+", "-").Trim('-');
+        return s.Length == 0 ? "roster" : (s.Length > 40 ? s.Substring(0, 40) : s);
+    }
+
+    // Seeds the library from what is already on disk: the disc rosters (also from the old
+    // _roster_backup folder) and whatever roster the game folder holds right now, so
+    // nothing is lost when switching.
+    static void Seed(string data) {
+        Directory.CreateDirectory(Root(data));
+        var sources = new List<byte[][]>();
+        string legacy = Path.Combine(data, "_roster_backup");
+        if (File.Exists(Path.Combine(legacy, FileName(0))) && File.Exists(Path.Combine(legacy, FileName(1))))
+            sources.Add(new[] { File.ReadAllBytes(Path.Combine(legacy, FileName(0))),
+                                File.ReadAllBytes(Path.Combine(legacy, FileName(1))) });
+        sources.Add(ReadGame(data));
+        var have = List(data, false);
+        foreach (var files in sources) {
+            bool stored = false;
+            foreach (var s in have) if (Matches(s, files)) { stored = true; break; }
+            if (stored) continue;
+            string name, id = Known(files[0], files[1], out name);
+            if (id == null) { id = UniqueId(data, "custom"); name = "Custom roster (saved " + DateTime.Now.ToString("yyyy-MM-dd") + ")"; }
+            else if (Directory.Exists(Path.Combine(Root(data), id))) continue;
+            have.Add(Save(data, id, name, files));
+        }
+    }
+
+    static bool Matches(RosterSet s, byte[][] files) {
+        try {
+            return Same(File.ReadAllBytes(Path.Combine(s.Dir, FileName(0))), files[0])
+                && Same(File.ReadAllBytes(Path.Combine(s.Dir, FileName(1))), files[1]);
+        } catch { return false; }
+    }
+
+    public static List<RosterSet> List(string data) { return List(data, true); }
+
+    static List<RosterSet> List(string data, bool seed) {
+        if (seed) Seed(data);
+        var result = new List<RosterSet>();
+        if (!Directory.Exists(Root(data))) return result;
+        foreach (string dir in Directory.GetDirectories(Root(data))) {
+            if (!File.Exists(Path.Combine(dir, FileName(0))) || !File.Exists(Path.Combine(dir, FileName(1)))) continue;
+            string name = Path.GetFileName(dir);
+            try {
+                foreach (string ln in File.ReadAllLines(Path.Combine(dir, "roster.txt")))
+                    if (ln.StartsWith("name=")) name = ln.Substring(5).Trim();
+            } catch { }
+            result.Add(new RosterSet { Id = Path.GetFileName(dir), Name = name, Dir = dir });
+        }
+        // Official rosters first, then the rest by name.
+        result.Sort((a, b) => {
+            int ra = a.Id == "original" ? 0 : a.Id == "oct2011" ? 1 : 2;
+            int rb = b.Id == "original" ? 0 : b.Id == "oct2011" ? 1 : 2;
+            return ra != rb ? ra - rb : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+        });
+        return result;
+    }
+
+    public static RosterSet Active(string data, List<RosterSet> sets) {
+        try {
+            var cur = ReadGame(data);
+            foreach (var s in sets) if (Matches(s, cur)) return s;
+        } catch { }
+        return null;
+    }
+
+    // Copies a roster into the game folder. Returns null on success.
+    public static string Activate(string data, RosterSet set) {
+        try {
+            Seed(data);   // keep whatever is in the folder now
+            for (int i = 0; i < 2; i++)
+                File.Copy(Path.Combine(set.Dir, FileName(i)), Path.Combine(data, GamePaths[i]), true);
+            return null;
+        } catch (Exception ex) { return "Could not switch rosters:\n" + ex.Message; }
+    }
+
+    // Adds the roster from an official update package (STFS). Returns null on success.
+    public static string ImportPackage(string data, string package, out RosterSet added) {
+        added = null;
+        byte[][] files; string err = RosterUpdate.Extract(package, out files);
+        if (err != null) return err;
+        return Add(data, files, null, out added);
+    }
+
+    // Adds a roster from a folder holding PLAYER_DATA.CHK and SEASON_PLAYER_DATA.CHK.
+    public static string ImportFolder(string data, string folder, string name, out RosterSet added) {
+        added = null;
+        var files = new byte[2][];
+        for (int i = 0; i < 2; i++) {
+            string p = Path.Combine(folder, FileName(i));
+            if (!File.Exists(p)) return "That folder has no " + FileName(i) + ".";
+            files[i] = File.ReadAllBytes(p);
+            if (files[i].Length < 4 || Encoding.ASCII.GetString(files[i], 0, 4) != "CHK ")
+                return FileName(i) + " is not a roster file.";
+        }
+        return Add(data, files, name, out added);
+    }
+
+    static string Add(string data, byte[][] files, string name, out RosterSet added) {
+        added = null;
+        try {
+            foreach (var s in List(data)) if (Matches(s, files)) { added = s; return null; }
+            string known, id = Known(files[0], files[1], out known);
+            if (id == null) {
+                if (string.IsNullOrEmpty(name)) name = "Custom roster";
+                id = UniqueId(data, Slug(name));
+            } else name = known;
+            added = Save(data, id, name, files);
+            return null;
+        } catch (Exception ex) { return "Could not add the roster:\n" + ex.Message; }
+    }
+}
+
+// Reads the two roster files out of the Oct 2011 roster update package (an Xbox 360
+// STFS file, "MLB Bobblehead Pros - Roster Update Oct.11"). The game never mounts the
+// package itself; the launcher installs its contents instead (see RosterLibrary).
+static class RosterUpdate {
+    const uint TitleId = 0x58410B7B;
+    const int Block = 0x1000;
+    static readonly string[] PackagePaths = {
+        "data/xbox360_us/player/data/PLAYER_DATA_OCT2011.CHK",
+        "data/xbox360_us/player/season_data/SEASON_PLAYER_DATA_OCT2011.CHK",
+    };
+
+    // Returns null on success (files = PLAYER_DATA, SEASON_PLAYER_DATA), else a message.
+    public static string Extract(string package, out byte[][] files) {
+        files = null;
         byte[] pkg;
         try { pkg = File.ReadAllBytes(package); } catch (Exception ex) { return "Could not read the file:\n" + ex.Message; }
         if (pkg.Length < 0x3000) return "That file is too small to be an Xbox 360 content package.";
@@ -119,44 +277,19 @@ static class RosterUpdate {
                  + "58410B7B\\00000002\\.";
         if (BE32(pkg, 0x360) != TitleId) return "That package is for a different game (not MLB Bobblehead Pros).";
 
-        var found = new byte[Files.GetLength(0)][];
         var entries = ReadFileTable(pkg);
         if (entries == null) return "Could not read the package's file table.";
-        for (int i = 0; i < Files.GetLength(0); i++) {
+        var found = new byte[PackagePaths.Length][];
+        for (int i = 0; i < PackagePaths.Length; i++) {
             Entry e;
-            if (!entries.TryGetValue(Files[i, 0].ToUpperInvariant(), out e))
-                return "This package does not contain the Oct 2011 roster update\n(missing " + Files[i, 0] + ").";
+            if (!entries.TryGetValue(PackagePaths[i].ToUpperInvariant(), out e))
+                return "This package does not contain the Oct 2011 roster update\n(missing " + PackagePaths[i] + ").";
             byte[] bytes = ReadFile(pkg, e);
             if (bytes == null || bytes.Length < 4 || Encoding.ASCII.GetString(bytes, 0, 4) != "CHK ")
                 return "The roster data in this package could not be read correctly.";
             found[i] = bytes;
         }
-
-        try {
-            Directory.CreateDirectory(BackupDir(data));
-            for (int i = 0; i < Files.GetLength(0); i++) {
-                string target = Path.Combine(data, Files[i, 1]);
-                if (!File.Exists(target)) return "The game folder is missing " + Files[i, 1] + ".";
-                // Keep the first backup forever: it holds the disc's original rosters.
-                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
-                if (!File.Exists(backup)) File.Copy(target, backup);
-            }
-            for (int i = 0; i < Files.GetLength(0); i++)
-                File.WriteAllBytes(Path.Combine(data, Files[i, 1]), found[i]);
-        } catch (Exception ex) { return "Could not write the roster files:\n" + ex.Message; }
-        return null;
-    }
-
-    public static string Restore(string data) {
-        try {
-            for (int i = 0; i < Files.GetLength(0); i++) {
-                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
-                if (!File.Exists(backup)) return "No backup of the original rosters was found.";
-            }
-            for (int i = 0; i < Files.GetLength(0); i++)
-                File.Copy(Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1])),
-                          Path.Combine(data, Files[i, 1]), true);
-        } catch (Exception ex) { return "Could not restore the roster files:\n" + ex.Message; }
+        files = found;
         return null;
     }
 
@@ -372,7 +505,7 @@ class SetupForm : GradientForm {
     List<GameDef> games;
     public SetupForm(List<GameDef> g) {
         games = g;
-        Text = "Setup"; ClientSize = new Size(560, 380);
+        Text = "Setup"; ClientSize = new Size(560, 400);
         var head = new Label { Text = "Game setup", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 15),
             AutoSize = true, Location = new Point(24, 18), BackColor = Color.Transparent };
         Controls.Add(head);
@@ -386,7 +519,7 @@ class SetupForm : GradientForm {
         var pros = games.Find(gg => gg.Key == "pros");
         if (pros != null) BuildRosterRow(pros, y + 10);
 
-        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, 380 - 58) };
+        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, 400 - 58) };
         done.Click += delegate { Config.Save(games); Close(); };
         Controls.Add(done);
     }
@@ -419,49 +552,85 @@ class SetupForm : GradientForm {
         y += 58;
     }
     void BuildRosterRow(GameDef pros, int y) {
-        var name = new Label { Text = "Pros roster update (Oct 2011)", ForeColor = Theme.Ink,
+        var name = new Label { Text = "Pros roster", ForeColor = Theme.Ink,
             Font = new Font("Segoe UI", 11, FontStyle.Bold), AutoSize = true, Location = new Point(26, y),
             BackColor = Color.Transparent };
         Controls.Add(name);
-        var status = new Label { Font = new Font("Segoe UI", 9), AutoSize = true, Location = new Point(28, y + 26),
-            BackColor = Color.Transparent };
+        var pick = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(28, y + 30),
+            Width = 340, Font = new Font("Segoe UI", 10) };
+        Controls.Add(pick);
+        var status = new Label { Font = new Font("Segoe UI", 9), AutoSize = true, Location = new Point(28, y + 62),
+            BackColor = Color.Transparent, ForeColor = Theme.Muted };
         Controls.Add(status);
+
+        bool filling = false;
         Action refresh = delegate {
-            bool have = pros.Installed;
-            bool on = have && RosterUpdate.IsApplied(pros.Data);
-            status.ForeColor = on ? Theme.Good : Theme.Muted;
-            status.Text = !have ? "Locate the Pros folder first."
-                        : on ? "Applied - the game uses the updated rosters."
-                             : "Not applied - choose the roster update package to install it.";
+            filling = true;
+            pick.Items.Clear();
+            if (!pros.Installed) {
+                pick.Enabled = false; status.ForeColor = Theme.Muted;
+                status.Text = "Locate the Pros folder first."; filling = false; return;
+            }
+            try {
+                var sets = RosterLibrary.List(pros.Data);
+                foreach (var s in sets) pick.Items.Add(s);
+                var active = RosterLibrary.Active(pros.Data, sets);
+                if (active != null) pick.SelectedIndex = sets.FindIndex(s => s.Id == active.Id);
+                pick.Enabled = sets.Count > 0;
+                status.ForeColor = Theme.Good;
+                status.Text = active != null ? "In use: " + active.Name : "The game folder's roster isn't in the library.";
+            } catch (Exception ex) {
+                pick.Enabled = false; status.ForeColor = Theme.Bad; status.Text = "Rosters unavailable: " + ex.Message;
+            }
+            filling = false;
         };
         refresh();
 
-        var apply = new RoundButton { Text = "Apply update...", Size = new Size(150, 36), Location = new Point(390, y - 4) };
-        apply.Click += delegate {
-            if (!pros.Installed) { MessageBox.Show("Locate the MLB Bobblehead Pros folder first.", "Roster update"); return; }
+        pick.SelectedIndexChanged += delegate {
+            if (filling) return;
+            var set = pick.SelectedItem as RosterSet;
+            if (set == null) return;
+            string err = RosterLibrary.Activate(pros.Data, set);
+            if (err != null) MessageBox.Show(err, "Rosters", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            refresh();
+        };
+
+        var import = new RoundButton { Text = "Import...", Size = new Size(150, 36), Location = new Point(390, y + 26) };
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Roster update package (Oct 2011)...", null, delegate {
             using (var ofd = new OpenFileDialog()) {
                 ofd.Title = "Choose the roster update package (inside 58410B7B\\00000002\\ of the extracted download)";
                 ofd.Filter = "Xbox 360 content package (*.*)|*.*";
                 if (ofd.ShowDialog() != DialogResult.OK) return;
-                string err = RosterUpdate.Apply(ofd.FileName, pros.Data);
-                if (err == null)
-                    MessageBox.Show("Roster update installed.\nThe original rosters were saved to _roster_backup in the game folder.",
-                        "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                else
-                    MessageBox.Show(err, "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                RosterSet added; string err = RosterLibrary.ImportPackage(pros.Data, ofd.FileName, out added);
+                Finish(err, added, pros, refresh);
             }
-            refresh();
+        });
+        menu.Items.Add("Roster folder (PLAYER_DATA.CHK + SEASON_PLAYER_DATA.CHK)...", null, delegate {
+            using (var fb = new FolderBrowserDialog()) {
+                fb.Description = "Select a folder containing PLAYER_DATA.CHK and SEASON_PLAYER_DATA.CHK";
+                if (fb.ShowDialog() != DialogResult.OK) return;
+                string label = Path.GetFileName(fb.SelectedPath.TrimEnd('\\'));
+                RosterSet added; string err = RosterLibrary.ImportFolder(pros.Data, fb.SelectedPath, label, out added);
+                Finish(err, added, pros, refresh);
+            }
+        });
+        import.Click += delegate {
+            if (!pros.Installed) { MessageBox.Show("Locate the MLB Bobblehead Pros folder first.", "Rosters"); return; }
+            menu.Show(import, new Point(0, import.Height));
         };
-        Controls.Add(apply);
+        Controls.Add(import);
+    }
 
-        var restore = new RoundButton { Text = "Restore", Size = new Size(100, 32), Location = new Point(440, y + 38) };
-        restore.Click += delegate {
-            if (!pros.Installed) return;
-            string err = RosterUpdate.Restore(pros.Data);
-            if (err != null) MessageBox.Show(err, "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            refresh();
-        };
-        Controls.Add(restore);
+    // After an import: offer to switch to the new roster right away.
+    static void Finish(string err, RosterSet added, GameDef pros, Action refresh) {
+        if (err != null) { MessageBox.Show(err, "Rosters", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+        if (MessageBox.Show("Added \"" + added.Name + "\".\nUse it now?", "Rosters",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) {
+            string e2 = RosterLibrary.Activate(pros.Data, added);
+            if (e2 != null) MessageBox.Show(e2, "Rosters", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        refresh();
     }
 }
 

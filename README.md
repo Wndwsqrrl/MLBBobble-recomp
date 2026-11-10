@@ -131,11 +131,14 @@ A standard XInput controller also works.
 together:
 - side‑by‑side game cards, greyed out until a game is installed,
 - a first‑run setup/installed‑checker that walks you through locating each game's files,
-- **Pros roster update:** Setup → *Apply update…* takes your own copy of the Oct 2011 roster
-  package (extract the `.7z`, then choose the file inside `58410B7B\00000002\`). The launcher
-  reads the Xbox content package itself, installs its two roster files over the base rosters,
-  and keeps the originals in `<game>\_roster_backup\`; *Restore* puts them back. When it's
-  applied, the game shows the update icon in the corner of the splash screen,
+- **Pros rosters by season:** Setup → *Pros roster* switches between every roster in the
+  game folder's roster library (`<game>\_rosters\`): *2011 Opening Day (original)*, *2011 End of
+  season (Oct 2011 update)*, and any custom season you add. *Import…* takes your own copy of the
+  Oct 2011 roster package (extract the `.7z`, then choose the file inside `58410B7B\00000002\`;
+  the launcher reads the Xbox content package itself) or a folder holding a
+  `PLAYER_DATA.CHK` + `SEASON_PLAYER_DATA.CHK` pair. The roster already in the game folder is
+  always saved to the library before switching, so nothing is lost. With the Oct 2011 roster in
+  use, the game shows the update icon in the corner of the splash screen,
 - an options panel (vsync, keyboard mode, fullscreen, and host‑side resolution — 720p/1080p/
   1440p/4k, where a preset above your panel downsamples for sharpness) that writes straight
   into each game's `.toml`.
