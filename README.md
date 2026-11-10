@@ -23,7 +23,7 @@ Xenia‑derived runtime. No emulator and no original game binary are needed at r
 - [Requirements](#requirements)
 - [Getting your game files](#getting-your-game-files)
 - [Building](#building) · [Running](#running) · [Controls](#controls-keyboard)
-- [Launcher](#launcher)
+- [Launcher](#launcher) · [Android](#android-pros-only-experimental)
 - [Known issues](#known-issues)
 - [Repository layout](#repository-layout) · [Acknowledgements](#acknowledgements) · [Legal](#legal)
 
@@ -181,6 +181,37 @@ The app icons (`installer/assets/*.ico`) are committed. To regenerate them from 
 data's `TitleIcon.png` instead, run `make-icons.ps1` first. Only `installer/dist/` (the built
 setup.exe / zip) is git-ignored.
 
+## Android (Pros only, experimental)
+
+Pros can also be built as an Android app (arm64 phones, Android 11+, Vulkan). It is built on
+your PC from your own copy of the game, and has not been tested on a phone yet.
+
+1. Apply **both** SDK patches (`sdk-patches/rexglue-sdk-local.patch`, then
+   `sdk-patches/rexglue-sdk-android.patch`), build + install the SDK for Windows, and build the
+   Windows version of Pros once (that runs codegen).
+2. Install Android Studio and, in its SDK Manager, an **NDK**, **CMake**, build-tools and a
+   platform.
+3. Build the Android SDK runtime, the game and the APK in one go:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File pros\android\build_android.ps1 -SdkSource <rexglue-sdk>
+   ```
+
+   → `pros\android\out\MLBBobbleheadPros.apk` (`-Install` also runs `adb install`).
+4. Install it, open it once, then copy your game files into the app's folder:
+
+   ```powershell
+   adb push "<game folder>\default.xex" /sdcard/Android/data/com.mlbbobblehead.pros/files/game/
+   adb push "<game folder>\data"        /sdcard/Android/data/com.mlbbobblehead.pros/files/game/
+   ```
+
+   Saves go to `files/user`, the log to `files/logs/bobbleheadpros.log`.
+
+Play with a Bluetooth or USB controller; there are no touch controls yet.
+
+> **Never share the APK.** `libmain.so` inside it is the recompiled game code. Keep it on your
+> own devices, the same as your game files.
+
 ## Known issues
 
 These are the rough edges in this first release. None of them prevent getting into and
@@ -247,6 +278,7 @@ achievements).
 
 ```
 pros/           ReXGlue project for MLB Bobblehead Pros   (manifest, functions, .toml, src/)
+pros/android/   Android app shell (manifest, activity, resources) + build_android.ps1
 battle/         ReXGlue project for MLB Bobblehead Battle
 launcher/       Windows launcher (C# / WinForms) — Launcher.cs
 sdk-patches/    Local patches to the ReXGlue SDK required to boot and play
