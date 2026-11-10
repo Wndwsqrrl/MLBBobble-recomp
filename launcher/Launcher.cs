@@ -591,11 +591,23 @@ class GradientForm : Form {
     }
 }
 
+// Optional launcher features, chosen at build time. The roster switcher (season rosters,
+// the Oct 2011 update) is not part of the v0.1.0 release, which ships the base games only;
+// build with  csc -define:ROSTERS ...  to include it.
+static class Features {
+#if ROSTERS
+    public const bool Rosters = true;
+#else
+    public const bool Rosters = false;
+#endif
+}
+
 class SetupForm : GradientForm {
     List<GameDef> games;
     public SetupForm(List<GameDef> g) {
         games = g;
-        Text = "Setup"; ClientSize = new Size(560, 400);
+        int height = Features.Rosters ? 400 : 300;
+        Text = "Setup"; ClientSize = new Size(560, height);
         var head = new Label { Text = "Game setup", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 15),
             AutoSize = true, Location = new Point(24, 18), BackColor = Color.Transparent };
         Controls.Add(head);
@@ -607,9 +619,9 @@ class SetupForm : GradientForm {
         int y = 86;
         foreach (var gd in games) BuildRow(gd, ref y);
         var pros = games.Find(gg => gg.Key == "pros");
-        if (pros != null) BuildRosterRow(pros, y + 10);
+        if (Features.Rosters && pros != null) BuildRosterRow(pros, y + 10);
 
-        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, 400 - 58) };
+        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, height - 58) };
         done.Click += delegate { Config.Save(games); Close(); };
         Controls.Add(done);
     }

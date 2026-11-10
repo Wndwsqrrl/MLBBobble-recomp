@@ -11,18 +11,18 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 
 | Game | Title ID | Status |
 |------|----------|--------|
-| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable: menus to full matches, full version, keyboard or controller. Rosters for any season ([details](#rosters-and-seasons)) |
+| **MLB Bobblehead Pros** | `58410B7B` | ▶️ Playable: menus to full matches, full version, keyboard or controller |
 | **MLB Bobblehead Battle** | `58410B7C` | ▶️ Playable: menus to full matches · ⚠️ **no audio** ([details](#known-issues)) |
 | Pros on Android | | 🧪 Experimental: builds and boots to the loading screen, not playable yet ([details](#android-pros-only-experimental)) |
 
-> ⚠️ **v0.1.0 is an early release.** Both games play full matches, but expect rough edges; see
-> [Known issues](#known-issues).
+> ⚠️ **v0.1.0 is an early release of the base games** (no roster updates or DLC). Both games
+> play full matches, but expect rough edges; see [Known issues](#known-issues).
 
 ## Contents
 
 - [Quick start](#quick-start) · [What's in the download](#whats-in-the-download)
 - [Requirements](#requirements) · [Getting your game files](#getting-your-game-files)
-- [Controls](#controls) · [Launcher](#launcher) · [Rosters and seasons](#rosters-and-seasons)
+- [Controls](#controls) · [Launcher](#launcher)
 - [Building from source](#building-from-source) · [Android](#android-pros-only-experimental)
 - [Known issues](#known-issues) · [Repository layout](#repository-layout)
 - [Acknowledgements](#acknowledgements) · [Legal](#legal)
@@ -38,8 +38,7 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 3. **Start MLB Bobblehead Pros or Battle** from the Start menu. The first time, the launcher's
    Setup screen asks you to locate each game's folder (the one containing `default.xex`) and
    checks that it is the version these builds were made from (it shows **Verified**).
-4. Play. Optional: in **Setup → Pros roster**, install the Oct 2011 roster update or a roster
-   for another season.
+4. Play.
 
 ## What's in the download
 
@@ -97,65 +96,12 @@ The launcher (`MLB Bobblehead Launcher.exe`) ties both games together:
 
 - **Game cards** with box art, greyed out until a game is set up. The Start menu shortcuts
   run `--play pros` / `--play battle`, which start that game directly once it is set up.
-- **Setup:** locate each game's folder, with the version check described above, and pick the
-  **Pros roster** (next section).
+- **Setup:** locate each game's folder, with the version check described above.
 - **Options:** V-Sync, keyboard controls, fullscreen and resolution (720p, 1080p, 1440p or 4K;
   a preset above your screen's resolution renders higher and scales down for a sharper image).
   The options are written into each game's `.toml`.
 
 It remembers your game folders in `launcher.cfg` next to the launcher.
-
-## Rosters and seasons
-
-**Setup → Pros roster** switches between every roster in the Pros game folder's roster library
-(`<game folder>\_rosters\`):
-
-- **2011 Opening Day (original):** the rosters the game shipped with.
-- **2011 End of season (Oct 2011 update):** the game's official roster update. Choose
-  **Import… → Roster update package** and select the file inside `58410B7B\00000002\` of the
-  extracted update download (extract the `.7z` first). The launcher reads the Xbox content
-  package itself; with this roster in use the game shows the update icon on the splash screen.
-- **Any other season** you add with **Import… → Roster folder** (a folder holding
-  `PLAYER_DATA.CHK` and `SEASON_PLAYER_DATA.CHK`, such as one made with the season builder
-  below).
-
-Switching writes the roster into the game folder **and into your Pros save**: the game keeps
-its own copy of every player in the save and reads names, ratings and looks from there. Close
-the game before switching. Before the first switch, each save is backed up to
-`Documents\bobbleheadpros\_save_backups\`, and the roster already in the game folder is kept in
-the library, so nothing is lost. Switching replaces any players you edited in-game.
-
-### Building a season's roster
-
-`tools/roster/` builds a roster for a real season from public data. It needs Python 3.11 or
-newer and your own original roster file as the template:
-
-```powershell
-cd tools\roster
-python fetch_mlb.py 2026          # rosters, bios and stats from the MLB Stats API
-python fetch_show.py 26           # optional: MLB The Show 26 player ratings
-python build_season.py --base "<game folder>\_rosters\original\PLAYER_DATA.CHK" `
-       --mlb cache\mlb_2026.json --show cache\show26_live.json `
-       --name "2026 End of season" --out out\2026
-python check_roster.py out\2026
-```
-
-Then import `out\2026` in the launcher. How it works:
-
-- **Players:** each club gets 25 (5 starters, 5 relievers, a setup man and a closer, and 13
-  position players, picked by playing time), plus both All-Star squads, with real names,
-  jersey numbers, positions, handedness, birth dates and the season's stat lines.
-- **Ratings** are put on the game's own Power Pros scales two ways: formulas reproduced from
-  the original 2011 roster applied to the season's stats, and The Show's ratings converted by
-  rank. The two are blended by sample size, and `report.txt` lists players where the sources
-  disagree a lot.
-- **Limits:** each new player borrows a similar 2011 player's look and pitch types (those
-  fields are not decoded yet). Team names, logos and leagues are built into the game, so
-  Houston stays in the NL and Miami appears as Florida. Rosters are taken from the last day of
-  the regular season, so injured players are missing.
-
-The downloaded data and the generated rosters stay on your PC (`cache\` and `out\` are not
-part of the repository). If MLB The Show's site answers 403 Forbidden, turn off any VPN.
 
 ## Building from source
 
@@ -256,9 +202,10 @@ releases: build it yourself.
   normal play; keep a copy of that folder if your progress matters to you.
 - **Achievements:** the Achievements screen opens and closes immediately (it is stubbed to
   avoid a freeze), and nothing is tracked.
-- **Bobblehead Stars DLC doesn't load.** The game finds the installed package but never opens
-  it; the check that decides this is in the recompiled code and hasn't been found yet. (The Oct
-  2011 roster update does work, through the launcher.)
+- **No updates or DLC in this release.** v0.1.0 plays the base games with their original
+  rosters; the Oct 2011 roster update is not supported yet. The Bobblehead Stars DLC doesn't
+  load: the game finds the installed package but never opens it, and the check that decides
+  this is in the recompiled code and hasn't been found yet.
 
 ### Performance
 
@@ -274,7 +221,7 @@ pros/android/    Android app shell and build_android.ps1
 battle/          ReXGlue project for MLB Bobblehead Battle
 launcher/        Windows launcher (Launcher.cs) and box art
 installer/       Inno Setup script, icons and build-installer.ps1
-tools/roster/    Pros roster format, season builder, data fetchers and research scripts
+tools/roster/    Pros roster format research and tools (work in progress, not part of v0.1.0)
 sdk-patches/     Patches to the ReXGlue SDK this project needs
 ```
 
@@ -283,10 +230,6 @@ sdk-patches/     Patches to the ReXGlue SDK this project needs
 - **ReXGlue**: the static PowerPC-to-C++ recompiler and runtime this project is built on.
 - **[Xenia](https://xenia.jp/)** (Ben Vanik and contributors): the kernel, GPU (Xenos) and XMA
   audio implementations the runtime derives from, under the BSD license.
-- **[SABR's Lahman Baseball Database](https://sabr.org/lahman-database/)**: used to decode and
-  calibrate the roster format.
-- The season builder reads public data from the **MLB Stats API** and **MLB The Show**'s player
-  ratings site on your own PC; that data belongs to its owners and is not redistributed here.
 - **Konami**: the original *MLB Bobblehead Pros* and *MLB Bobblehead Battle* (2011).
 
 ## Legal
