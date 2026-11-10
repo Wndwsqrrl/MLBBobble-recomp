@@ -1,0 +1,4 @@
+# Downloaded MLB / MLB The Show data and generated rosters: local only, never committed.
+cache/
+out/
+__pycache__/
