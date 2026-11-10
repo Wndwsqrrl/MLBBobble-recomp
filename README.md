@@ -5,9 +5,8 @@
   <sub>Official <i>MLB Bobblehead Pros</i> artwork © 2011 Konami Digital Entertainment. MLB and team marks are the property of their owners.</sub>
 </p>
 
-[![Download](https://img.shields.io/github/v/release/Wndwsqrrl/MLBBobble-recomp?label=Download&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Wndwsqrrl/MLBBobble-recomp/total?label=Downloads&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-6d4bd6)](LICENSE)
+[![Download v0.1.0](https://img.shields.io/badge/Download-v0.1.0-6d4bd6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases/tag/v0.1.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-6d4bd6?style=for-the-badge)](LICENSE)
 
 Native Windows PC ports of the two Xbox 360 **MLB Bobblehead** games, made by **static
 recompilation** with [ReXGlue](#acknowledgements): the original PowerPC game code is translated
