@@ -1,5 +1,10 @@
 # MLB Bobblehead Recomp
 
+<p align="center">
+  <img src="docs/screenshots/banner.jpg" alt="MLB Bobblehead Pros artwork" width="100%"><br>
+  <sub>Official <i>MLB Bobblehead Pros</i> artwork © 2011 Konami Digital Entertainment. MLB and team marks are the property of their owners.</sub>
+</p>
+
 [![Download](https://img.shields.io/github/v/release/Wndwsqrrl/MLBBobble-recomp?label=Download&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Wndwsqrrl/MLBBobble-recomp/total?label=Downloads&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6d4bd6)](LICENSE)
