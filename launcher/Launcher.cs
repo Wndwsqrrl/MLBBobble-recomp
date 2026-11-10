@@ -206,13 +206,19 @@ static class RosterLibrary {
         return null;
     }
 
-    // Copies a roster into the game folder. Returns null on success.
+    // Copies a roster into the game folder and into the game's saves (which keep their own
+    // copy of the player records). Returns null on success.
     public static string Activate(string data, RosterSet set) {
         try {
+            if (System.Diagnostics.Process.GetProcessesByName("bobbleheadpros").Length > 0)
+                return "Close MLB Bobblehead Pros first: it rewrites its save when it exits,\nwhich would undo the roster switch.";
+            byte[] player = File.ReadAllBytes(Path.Combine(set.Dir, FileName(0)));
+            string err = SaveRoster.Check();
+            if (err != null) return err;
             Seed(data);   // keep whatever is in the folder now
             for (int i = 0; i < 2; i++)
                 File.Copy(Path.Combine(set.Dir, FileName(i)), Path.Combine(data, GamePaths[i]), true);
-            return null;
+            return SaveRoster.Apply(player);
         } catch (Exception ex) { return "Could not switch rosters:\n" + ex.Message; }
     }
 
@@ -224,9 +230,16 @@ static class RosterLibrary {
         return Add(data, files, null, out added);
     }
 
-    // Adds a roster from a folder holding PLAYER_DATA.CHK and SEASON_PLAYER_DATA.CHK.
+    // Adds a roster from a folder holding PLAYER_DATA.CHK and SEASON_PLAYER_DATA.CHK
+    // (named by its roster.txt when it has one, else by the given name).
     public static string ImportFolder(string data, string folder, string name, out RosterSet added) {
         added = null;
+        try {
+            string txt = Path.Combine(folder, "roster.txt");
+            if (File.Exists(txt))
+                foreach (string ln in File.ReadAllLines(txt))
+                    if (ln.StartsWith("name=") && ln.Length > 5) name = ln.Substring(5).Trim();
+        } catch { }
         var files = new byte[2][];
         for (int i = 0; i < 2; i++) {
             string p = Path.Combine(folder, FileName(i));
@@ -250,6 +263,70 @@ static class RosterLibrary {
             added = Save(data, id, name, files);
             return null;
         } catch (Exception ex) { return "Could not add the roster:\n" + ex.Message; }
+    }
+}
+
+// The game copies the player records into its save when the save is created and from then
+// on reads names, ratings and looks from the save; only the team table comes from
+// PLAYER_DATA.CHK. So a roster switch also writes the records into every Pros save:
+// all 1300 slots at 0x805C0, then a 25-record list the game fills with the first 25.
+static class SaveRoster {
+    const int Records = 0x805C0, Slots = 1300, Stride = 280, Extra = 25, Rec0 = 0x20;
+
+    public static string RootOverride;   // tests only
+    static string Root {
+        get { return RootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "bobbleheadpros"); }
+    }
+
+    // Every Pros save: <root>\<profile>\58410B7B\00000001\<name>\savedata1
+    static List<string> Saves() {
+        var list = new List<string>();
+        if (!Directory.Exists(Root)) return list;
+        foreach (string f in Directory.GetFiles(Root, "savedata1", SearchOption.AllDirectories))
+            if (f.IndexOf(@"\58410B7B\00000001\", StringComparison.OrdinalIgnoreCase) >= 0
+                && f.IndexOf(@"\_save_backups\", StringComparison.OrdinalIgnoreCase) < 0)
+                list.Add(f);
+        return list;
+    }
+
+    static int U16(byte[] b, int o) { return b[o] << 8 | b[o + 1]; }
+
+    static bool Layout(byte[] s) {
+        int end = Records + Slots * Stride, extraEnd = end + Extra * Stride;
+        if (s.Length < extraEnd + Stride) return false;
+        if (U16(s, Records) != 1 || U16(s, end - Stride) != 0 || U16(s, end) != 1) return false;
+        for (int i = extraEnd; i < extraEnd + Stride; i++) if (s[i] != 0) return false;
+        return true;
+    }
+
+    // null when every save can take a roster, else a message.
+    public static string Check() {
+        foreach (string f in Saves())
+            if (!Layout(File.ReadAllBytes(f)))
+                return "A Pros save has an unexpected layout, so the roster was not switched:\n" + f;
+        return null;
+    }
+
+    public static string Apply(byte[] player) {
+        try {
+            string backups = Path.Combine(Root, "_save_backups");
+            foreach (string f in Saves()) {
+                byte[] s = File.ReadAllBytes(f);
+                if (!Layout(s)) return "Skipped a save with an unexpected layout:\n" + f;
+                // one backup per save, from before the first roster switch; never overwritten
+                Directory.CreateDirectory(backups);
+                string rel = f.Substring(Root.Length).Trim('\\').Replace('\\', '_');
+                string bak = Path.Combine(backups, rel + ".original");
+                if (!File.Exists(bak)) File.Copy(f, bak);
+                Buffer.BlockCopy(player, Rec0, s, Records, Slots * Stride);
+                Buffer.BlockCopy(player, Rec0, s, Records + Slots * Stride, Extra * Stride);
+                string tmp = f + ".tmp";
+                File.WriteAllBytes(tmp, s);
+                File.Copy(tmp, f, true);
+                File.Delete(tmp);
+            }
+            return null;
+        } catch (Exception ex) { return "The roster files were switched, but a save could not be updated:\n" + ex.Message; }
     }
 }
 

@@ -40,8 +40,14 @@ AL_ALLSTAR, NL_ALLSTAR = 31, 32
 # name: (byte, bit, width). Bit 0 of a byte is its most significant bit.
 FIELDS = {
     'id':        (0x00, 0, 16),
+    'team':      (0x53, 0, 5),    # the player's club block 1-30: decides the uniform (All-Star copies too)
     'jersey':    (0x54, 5, 7),
     'position':  (0x61, 1, 4),    # scorebook number: 1 P, 2 C, 3 1B ... 9 RF
+    # fielding grade per position, 0-7: 7 main position, 6 real second position,
+    # 2-3 a natural neighbour, 1 can't really play it (0x63 bit 7 between SS and LF is not one of them)
+    'apt_P':  (0x61, 5, 3), 'apt_C':  (0x62, 0, 3), 'apt_1B': (0x62, 3, 3), 'apt_2B': (0x62, 6, 3),
+    'apt_3B': (0x63, 1, 3), 'apt_SS': (0x63, 4, 3), 'apt_LF': (0x64, 0, 3), 'apt_CF': (0x64, 3, 3),
+    'apt_RF': (0x64, 6, 3),
     'bats':      (0x6C, 2, 2),    # 0 R, 1 L, 2 switch
     'throws':    (0x6C, 5, 1),    # 0 R, 1 L
     'traj':      (0x6D, 1, 2),    # trajectory 1-4
@@ -67,6 +73,49 @@ FIELDS = {
     'saves':     (0x93, 0, 6),
 }
 NAMES = {'display': (0x02, 10), 'last': (0x16, 14), 'first': (0x32, 15)}   # UTF-16BE, chars
+APT_POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']       # scorebook order 1..9
+
+# Save file (savedata1): the game keeps its own copy of the player records, made when the
+# save is created, and reads names/ratings/looks from it (only the team table comes from
+# PLAYER_DATA.CHK). It holds all SLOTS records at SAVE_RECORDS, followed by a second list
+# of SAVE_EXTRA records that the game fills with copies of the roster's first SAVE_EXTRA.
+SAVE_RECORDS = 0x805C0
+SAVE_EXTRA = 25
+
+
+def fielding_grades(main, secondary=()):
+    """Per-position grades like the 2011 roster: main 7, real secondary positions 6,
+    neighbours 2-3, the rest 1. Pitchers: P 7, everything else 1."""
+    g = {p: 1 for p in APT_POSITIONS}
+    if main == 'P':
+        g['P'] = 7
+        return g
+    infield, outfield = ('2B', '3B', 'SS'), ('LF', 'CF', 'RF')
+    if main in infield:
+        for p in infield: g[p] = 3
+        g['1B'] = 2
+    elif main == '1B':
+        for p in infield: g[p] = 2
+    elif main in outfield:
+        for p in outfield: g[p] = 3
+    for p in secondary:
+        if p in g and p != 'P': g[p] = max(g[p], 6)
+    g[main] = 7
+    return g
+
+
+def apply_to_save(save, chk):
+    """Copy a roster's player records into save bytes (bytearray), as the game does when it
+    creates a save. Raises ValueError if the save does not look like a Bobblehead Pros save."""
+    first = int.from_bytes(save[SAVE_RECORDS:SAVE_RECORDS + 2], 'big')
+    end = SAVE_RECORDS + SLOTS * STRIDE
+    extra_end = end + SAVE_EXTRA * STRIDE
+    if len(save) < extra_end + STRIDE or first != 1 or int.from_bytes(save[end - STRIDE:end - STRIDE + 2], 'big') != 0 \
+            or int.from_bytes(save[end:end + 2], 'big') != 1 or any(save[extra_end:extra_end + STRIDE]):
+        raise ValueError('unexpected save layout')
+    block = chk[REC0:REC0 + SLOTS * STRIDE]
+    save[SAVE_RECORDS:end] = block
+    save[end:extra_end] = block[:SAVE_EXTRA * STRIDE]
 
 
 def get(rec, name):

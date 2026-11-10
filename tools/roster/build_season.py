@@ -264,6 +264,19 @@ def template(is_pitcher, bats, throws, pos, seed):
     return lst[seed % len(lst)]
 
 BATS = {'R': 0, 'L': 1, 'S': 2, 'B': 2}
+block_of_team = {tid: b for b, tid in enumerate(pp.TEAM_ORDER) if tid}
+
+def secondary_positions(i):
+    c = card_for(chosen[i][0])
+    raw = (c or {}).get('display_secondary_positions') or ''
+    out = []
+    for s in raw.replace('/', ',').split(','):
+        s = s.strip().upper()
+        if s == 'OF': out += ['LF', 'CF', 'RF']
+        elif s == 'IF': out += ['2B', '3B', 'SS']
+        elif s in pp.APT_POSITIONS: out.append(s)
+    return out
+
 def make_record(pid, i, role):
     p = chosen[i][0]; is_p = role != pp.ROLE_HITTER
     pos = POSNUM.get(any_pos.get(i) or p['pos'], 1 if is_p else 8)
@@ -275,6 +288,13 @@ def make_record(pid, i, role):
     j = (any_jersey.get(i) or '').strip()
     if j.isdigit(): pp.put(rec, 'jersey', int(j))
     pp.put(rec, 'position', pos)
+    # uniform: the club the player is listed with (All-Star copies wear their own club's too)
+    club = next((b for b in range(1, 31) if any(e[0]['id'] == i for e in clubs[b]['entries'])), None)
+    club = club or block_of_team.get(player_team.get(i))
+    if club: pp.put(rec, 'team', club)
+    main = pp.APT_POSITIONS[pos - 1]
+    for k, v in pp.fielding_grades(main, [] if is_p else secondary_positions(i)).items():
+        pp.put(rec, 'apt_' + k, v)
     pp.put(rec, 'bats', BATS.get(p['bats'], 0)); pp.put(rec, 'throws', 1 if p['throws'] == 'L' else 0)
     if p['birth']:
         y, mo, d = (int(x) for x in p['birth'].split('-'))
