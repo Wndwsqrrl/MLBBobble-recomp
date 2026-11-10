@@ -68,8 +68,8 @@ title's `default.xex` and its `data/` tree, e.g.:
 ```
 
 Any STFS extractor works. Point the recomp at the folder that contains `default.xex` via
-`--game_data_root` (below). If you also own the **roster update** and **DLC** add‑ons, extract
-their data files into the same `cdvdroot` tree.
+`--game_data_root` (below). If you own the **Oct 2011 roster update** for Pros, install it
+from the launcher's Setup screen (see [Launcher](#launcher)) rather than copying files by hand.
 
 ## Building
 
@@ -131,6 +131,11 @@ A standard XInput controller also works.
 together:
 - side‑by‑side game cards, greyed out until a game is installed,
 - a first‑run setup/installed‑checker that walks you through locating each game's files,
+- **Pros roster update:** Setup → *Apply update…* takes your own copy of the Oct 2011 roster
+  package (extract the `.7z`, then choose the file inside `58410B7B\00000002\`). The launcher
+  reads the Xbox content package itself, installs its two roster files over the base rosters,
+  and keeps the originals in `<game>\_roster_backup\`; *Restore* puts them back. When it's
+  applied, the game shows the update icon in the corner of the splash screen,
 - an options panel (vsync, keyboard mode, fullscreen, and host‑side resolution — 720p/1080p/
   1440p/4k, where a preset above your panel downsamples for sharpness) that writes straight
   into each game's `.toml`.
@@ -224,10 +229,9 @@ achievements).
 - **Achievements are headless.** The Achievements screen opens and closes immediately (it is
   stubbed to prevent a freeze that happened when the real Xbox achievements blade was invoked),
   so there is no achievement UI and nothing is unlocked/tracked.
-- **DLC / roster updates are not wired up yet.** The add‑on packages (Bobblehead Stars, the
-  periodic roster updates) exist as Xbox STFS content, but loading them into the game is still
-  a work in progress — don't drop them in yet; an earlier attempt to auto‑install them hung the
-  game. Tracked for a future update.
+- **Bobblehead Stars DLC doesn't load yet.** The game lists the installed package but never
+  opens it; the check that decides this is inside the recompiled game code and hasn't been
+  found yet. (The Oct 2011 **roster update** works — install it from the launcher.)
 
 ### Performance
 

@@ -1,3 +1,24 @@
+diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
+index d9a64eb..781bdc7 100644
+--- a/cmake/rexglue_install.cmake
++++ b/cmake/rexglue_install.cmake
+@@ -191,6 +191,11 @@ install(EXPORT rexglueTargets
+ #
+ # Windows: HKCU\Software\Kitware\CMake\Packages\rexglue  (REG_SZ, value name = MD5 hash)
+ # Unix:    ~/.cmake/packages/rexglue/<hash>               (file containing prefix path)
++#
++# Skipped for cross-compiled installs (Android/iOS): a target-only prefix in the registry
++# would be found by a later host configure (find_package prefers the newest registry entry)
++# and break the native build. Cross builds point at their prefix with rexglue_DIR instead.
++if(NOT CMAKE_CROSSCOMPILING)
+ install(CODE [[
+     # Normalize path casing on Windows before hashing to avoid duplicate entries
+     if(CMAKE_HOST_WIN32)
+@@ -215,3 +220,4 @@ install(CODE [[
+     message(STATUS "Registered rexglue in CMake user package registry")
+     message(STATUS "  -> ${CMAKE_INSTALL_PREFIX}")
+ ]])
++endif()
 diff --git a/include/rex/input/input_system.h b/include/rex/input/input_system.h
 index 1cb3faa..b6c5953 100644
 --- a/include/rex/input/input_system.h

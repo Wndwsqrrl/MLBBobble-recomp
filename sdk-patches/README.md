@@ -31,9 +31,9 @@ Then rebuild + reinstall the SDK and rebuild the app:
   selector at the splash and reaches the main menu.
 - `src/kernel/xam/xam_ui.cpp` — implement `XamShowAchievementsUI` as a headless
   open/close so the Achievements menu item no longer freezes.
-- `src/ui/presenter.cpp` — a debug guest-output screenshot triggered by the
-  sentinel file `F:/bobblehead-recomp/out/SHOOT` (writes `out/guest.bmp`).
-  Diagnostic only; safe to drop.
+- `cmake/rexglue_install.cmake` — skip the CMake user-package-registry entry for
+  cross-compiled installs (Android/iOS). Otherwise a later Windows configure can
+  find the Android prefix and fail; cross builds pass `rexglue_DIR` explicitly.
 
 ## Critical runtime setting (not an SDK patch)
 On this NVIDIA GPU the game renders black on the default RTV path. The fix lives

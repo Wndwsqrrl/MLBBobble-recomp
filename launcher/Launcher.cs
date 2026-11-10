@@ -70,6 +70,175 @@ static class Config {
     }
 }
 
+// Roster update for MLB Bobblehead Pros: the Oct 2011 title-content package (an
+// Xbox 360 STFS file, "MLB Bobblehead Pros - Roster Update Oct.11") carries two
+// replacement roster files. The game never mounts the package itself, so the
+// launcher copies them over the base rosters in the game folder, keeping the
+// originals in <game>\_roster_backup\ so the change can be undone.
+static class RosterUpdate {
+    const uint TitleId = 0x58410B7B;
+    const int Block = 0x1000;
+    // package path -> path in the game folder (relative to the folder with default.xex)
+    static readonly string[,] Files = {
+        { "data/xbox360_us/player/data/PLAYER_DATA_OCT2011.CHK",
+          @"data\xbox360_us\player\data\PLAYER_DATA.CHK" },
+        { "data/xbox360_us/player/season_data/SEASON_PLAYER_DATA_OCT2011.CHK",
+          @"data\xbox360_us\player\season_data\SEASON_PLAYER_DATA.CHK" },
+    };
+
+    static string BackupDir(string data) { return Path.Combine(data, "_roster_backup"); }
+
+    public static bool IsApplied(string data) {
+        try {
+            for (int i = 0; i < Files.GetLength(0); i++) {
+                string target = Path.Combine(data, Files[i, 1]);
+                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
+                if (!File.Exists(target) || !File.Exists(backup)) return false;
+                if (SameBytes(target, backup)) return false;
+            }
+            return true;
+        } catch { return false; }
+    }
+
+    static bool SameBytes(string a, string b) {
+        var x = File.ReadAllBytes(a); var y = File.ReadAllBytes(b);
+        if (x.Length != y.Length) return false;
+        for (int i = 0; i < x.Length; i++) if (x[i] != y[i]) return false;
+        return true;
+    }
+
+    // Returns null on success, otherwise a message for the user.
+    public static string Apply(string package, string data) {
+        byte[] pkg;
+        try { pkg = File.ReadAllBytes(package); } catch (Exception ex) { return "Could not read the file:\n" + ex.Message; }
+        if (pkg.Length < 0x3000) return "That file is too small to be an Xbox 360 content package.";
+        string magic = Encoding.ASCII.GetString(pkg, 0, 4);
+        if (magic != "CON " && magic != "LIVE" && magic != "PIRS")
+            return "That is not an Xbox 360 content package (STFS).\n\n"
+                 + "If you have the .7z download, extract it first and choose the file inside\n"
+                 + "58410B7B\\00000002\\.";
+        if (BE32(pkg, 0x360) != TitleId) return "That package is for a different game (not MLB Bobblehead Pros).";
+
+        var found = new byte[Files.GetLength(0)][];
+        var entries = ReadFileTable(pkg);
+        if (entries == null) return "Could not read the package's file table.";
+        for (int i = 0; i < Files.GetLength(0); i++) {
+            Entry e;
+            if (!entries.TryGetValue(Files[i, 0].ToUpperInvariant(), out e))
+                return "This package does not contain the Oct 2011 roster update\n(missing " + Files[i, 0] + ").";
+            byte[] bytes = ReadFile(pkg, e);
+            if (bytes == null || bytes.Length < 4 || Encoding.ASCII.GetString(bytes, 0, 4) != "CHK ")
+                return "The roster data in this package could not be read correctly.";
+            found[i] = bytes;
+        }
+
+        try {
+            Directory.CreateDirectory(BackupDir(data));
+            for (int i = 0; i < Files.GetLength(0); i++) {
+                string target = Path.Combine(data, Files[i, 1]);
+                if (!File.Exists(target)) return "The game folder is missing " + Files[i, 1] + ".";
+                // Keep the first backup forever: it holds the disc's original rosters.
+                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
+                if (!File.Exists(backup)) File.Copy(target, backup);
+            }
+            for (int i = 0; i < Files.GetLength(0); i++)
+                File.WriteAllBytes(Path.Combine(data, Files[i, 1]), found[i]);
+        } catch (Exception ex) { return "Could not write the roster files:\n" + ex.Message; }
+        return null;
+    }
+
+    public static string Restore(string data) {
+        try {
+            for (int i = 0; i < Files.GetLength(0); i++) {
+                string backup = Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1]));
+                if (!File.Exists(backup)) return "No backup of the original rosters was found.";
+            }
+            for (int i = 0; i < Files.GetLength(0); i++)
+                File.Copy(Path.Combine(BackupDir(data), Path.GetFileName(Files[i, 1])),
+                          Path.Combine(data, Files[i, 1]), true);
+        } catch (Exception ex) { return "Could not restore the roster files:\n" + ex.Message; }
+        return null;
+    }
+
+    // --- minimal STFS reader (read-only, contiguous files) -------------------------------------
+
+    class Entry { public int Start; public int Size; public bool Contiguous; }
+
+    static uint BE32(byte[] b, int o) { return (uint)(b[o] << 24 | b[o + 1] << 16 | b[o + 2] << 8 | b[o + 3]); }
+    static int LE24(byte[] b, int o) { return b[o] | b[o + 1] << 8 | b[o + 2] << 16; }
+
+    // Data block number -> physical block, skipping the interleaved level-0/1/2 hash tables.
+    static long Backing(long b, int shift) {
+        long t = (((b + 0xAA) / 0xAA) << shift) + b;
+        if (b < 0xAA) return t;
+        t += ((b + 0x70E4) / 0x70E4) << shift;
+        if (b < 0x70E4) return t;
+        return t + (((b + 0x4AF768) / 0x4AF768) << shift);
+    }
+
+    static long Offset(byte[] pkg, long block, int shift) {
+        long headerSize = BE32(pkg, 0x340);
+        long baseOff = (headerSize + 0xFFF) & ~0xFFFL;
+        return baseOff + Backing(block, shift) * Block;
+    }
+
+    static int Shift;
+
+    static Dictionary<string, Entry> ReadFileTable(byte[] pkg) {
+        int count = pkg[0x37C] | pkg[0x37D] << 8;
+        int first = LE24(pkg, 0x37E);
+        int sep = pkg[0x37B] & 1;
+        // The table-size bit is not always set as documented: accept whichever reading gives
+        // printable names.
+        foreach (int shift in new[] { sep, 1 - sep }) {
+            var names = new List<string>(); var parents = new List<int>(); var raw = new List<Entry>();
+            var dirs = new List<bool>();
+            bool ok = true;
+            for (int bi = 0; bi < Math.Max(count, 1) && ok; bi++) {
+                long off = Offset(pkg, first + bi, shift);
+                if (off < 0 || off + Block > pkg.Length) { ok = false; break; }
+                for (int j = 0; j < Block; j += 0x40) {
+                    long e = off + j;
+                    int flags = pkg[e + 0x28], len = flags & 0x3F;
+                    if (len == 0) continue;
+                    for (int k = 0; k < len; k++) { byte c = pkg[e + k]; if (c < 32 || c >= 127) ok = false; }
+                    if (!ok) break;
+                    names.Add(Encoding.ASCII.GetString(pkg, (int)e, len));
+                    dirs.Add((flags & 0x80) != 0);
+                    parents.Add(pkg[e + 0x32] << 8 | pkg[e + 0x33]);
+                    raw.Add(new Entry { Start = LE24(pkg, (int)e + 0x2F), Size = (int)BE32(pkg, (int)e + 0x34),
+                                        Contiguous = (flags & 0x40) != 0 });
+                }
+            }
+            if (!ok || names.Count == 0) continue;
+            Shift = shift;
+            var result = new Dictionary<string, Entry>();
+            for (int i = 0; i < names.Count; i++) {
+                if (dirs[i]) continue;
+                string path = names[i]; int p = parents[i], guard = 0;
+                while (p != 0xFFFF && p >= 0 && p < names.Count && guard++ < 64) { path = names[p] + "/" + path; p = parents[p]; }
+                result[path.ToUpperInvariant()] = raw[i];
+            }
+            return result;
+        }
+        return null;
+    }
+
+    static byte[] ReadFile(byte[] pkg, Entry e) {
+        if (!e.Contiguous && e.Size > Block) return null;   // would need the hash-chain walk
+        var outp = new byte[e.Size];
+        int done = 0;
+        for (long k = 0; done < e.Size; k++) {
+            long off = Offset(pkg, e.Start + k, Shift);
+            int n = Math.Min(Block, e.Size - done);
+            if (off + n > pkg.Length) return null;
+            Buffer.BlockCopy(pkg, (int)off, outp, done, n);
+            done += n;
+        }
+        return outp;
+    }
+}
+
 class RoundButton : Button {
     public RoundButton() {
         FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
@@ -203,7 +372,7 @@ class SetupForm : GradientForm {
     List<GameDef> games;
     public SetupForm(List<GameDef> g) {
         games = g;
-        Text = "Setup"; ClientSize = new Size(560, 300);
+        Text = "Setup"; ClientSize = new Size(560, 380);
         var head = new Label { Text = "Game setup", ForeColor = Theme.Ink, Font = new Font("Segoe UI", 15),
             AutoSize = true, Location = new Point(24, 18), BackColor = Color.Transparent };
         Controls.Add(head);
@@ -214,8 +383,10 @@ class SetupForm : GradientForm {
 
         int y = 86;
         foreach (var gd in games) BuildRow(gd, ref y);
+        var pros = games.Find(gg => gg.Key == "pros");
+        if (pros != null) BuildRosterRow(pros, y + 10);
 
-        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, 300 - 58) };
+        var done = new RoundButton { Text = "Done", Size = new Size(120, 42), Location = new Point(560 - 24 - 120, 380 - 58) };
         done.Click += delegate { Config.Save(games); Close(); };
         Controls.Add(done);
     }
@@ -246,6 +417,51 @@ class SetupForm : GradientForm {
         };
         Controls.Add(locate);
         y += 58;
+    }
+    void BuildRosterRow(GameDef pros, int y) {
+        var name = new Label { Text = "Pros roster update (Oct 2011)", ForeColor = Theme.Ink,
+            Font = new Font("Segoe UI", 11, FontStyle.Bold), AutoSize = true, Location = new Point(26, y),
+            BackColor = Color.Transparent };
+        Controls.Add(name);
+        var status = new Label { Font = new Font("Segoe UI", 9), AutoSize = true, Location = new Point(28, y + 26),
+            BackColor = Color.Transparent };
+        Controls.Add(status);
+        Action refresh = delegate {
+            bool have = pros.Installed;
+            bool on = have && RosterUpdate.IsApplied(pros.Data);
+            status.ForeColor = on ? Theme.Good : Theme.Muted;
+            status.Text = !have ? "Locate the Pros folder first."
+                        : on ? "Applied - the game uses the updated rosters."
+                             : "Not applied - choose the roster update package to install it.";
+        };
+        refresh();
+
+        var apply = new RoundButton { Text = "Apply update...", Size = new Size(150, 36), Location = new Point(390, y - 4) };
+        apply.Click += delegate {
+            if (!pros.Installed) { MessageBox.Show("Locate the MLB Bobblehead Pros folder first.", "Roster update"); return; }
+            using (var ofd = new OpenFileDialog()) {
+                ofd.Title = "Choose the roster update package (inside 58410B7B\\00000002\\ of the extracted download)";
+                ofd.Filter = "Xbox 360 content package (*.*)|*.*";
+                if (ofd.ShowDialog() != DialogResult.OK) return;
+                string err = RosterUpdate.Apply(ofd.FileName, pros.Data);
+                if (err == null)
+                    MessageBox.Show("Roster update installed.\nThe original rosters were saved to _roster_backup in the game folder.",
+                        "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                else
+                    MessageBox.Show(err, "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            refresh();
+        };
+        Controls.Add(apply);
+
+        var restore = new RoundButton { Text = "Restore", Size = new Size(100, 32), Location = new Point(440, y + 38) };
+        restore.Click += delegate {
+            if (!pros.Installed) return;
+            string err = RosterUpdate.Restore(pros.Data);
+            if (err != null) MessageBox.Show(err, "Roster update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            refresh();
+        };
+        Controls.Add(restore);
     }
 }
 
