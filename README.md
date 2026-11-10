@@ -6,6 +6,7 @@
 </p>
 
 [![Download v0.1.0](https://img.shields.io/badge/Download-v0.1.0-6d4bd6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases/tag/v0.1.0)
+[![Downloads](https://img.shields.io/github/downloads/Wndwsqrrl/MLBBobble-recomp/total?style=for-the-badge&label=downloads&color=6d4bd6)](https://github.com/Wndwsqrrl/MLBBobble-recomp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-6d4bd6?style=for-the-badge)](LICENSE)
 
 Native Windows PC ports of the two Xbox 360 **MLB Bobblehead** games, made by **static
