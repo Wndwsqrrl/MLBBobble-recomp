@@ -43,7 +43,8 @@ if (-not $SkipLauncherBuild) {
     if (-not (Test-Path $csc)) { throw "csc.exe not found at $csc" }
     Write-Host "Building launcher..." -ForegroundColor Cyan
     Push-Location (Join-Path $RepoRoot 'launcher')
-    & $csc -nologo -target:winexe -out:$Launcher -r:System.Windows.Forms.dll -r:System.Drawing.dll Launcher.cs
+    & $csc -nologo -target:winexe -out:$Launcher -r:System.Windows.Forms.dll -r:System.Drawing.dll `
+        -r:System.IO.Compression.dll -r:System.IO.Compression.FileSystem.dll -r:System.Management.dll Launcher.cs
     Pop-Location
     if ($LASTEXITCODE -ne 0) { throw "Launcher build failed." }
 }

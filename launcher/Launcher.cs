@@ -501,15 +501,9 @@ class Card : Panel {
     }
     void Activate() {
         if (!g.Installed) { if (OnSetup != null) OnSetup(); return; }
-        try {
-            var psi = new ProcessStartInfo(g.Exe, "--game_data_root=\"" + g.Data + "\"");
-            psi.WorkingDirectory = Path.GetDirectoryName(g.Exe);
-            psi.UseShellExecute = true;
-            Process.Start(psi);
-        } catch (Exception ex) {
-            MessageBox.Show("Failed to launch:\n" + ex.Message, "Launcher",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        string err = GameRun.Start(g);
+        if (err != null)
+            MessageBox.Show("Failed to launch:\n" + err, "Launcher", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
     protected override void OnResize(EventArgs e) {
         base.OnResize(e);
@@ -641,6 +635,7 @@ class SetupForm : GradientForm {
                     string path = fb.SelectedPath;
                     if (File.Exists(Path.Combine(path, "default.xex"))) {
                         bool ok = gd.XexMatches(path);
+                        Logs.Write("setup " + gd.Key + ": located " + path + " (default.xex " + (ok ? "verified" : "does NOT match the expected version") + ")");
                         if (!ok && MessageBox.Show(
                                 "This default.xex is not the version " + gd.Name + " was built from.\n\n" +
                                 "It may be a different region or version, or the files may have been modified. " +
@@ -825,6 +820,158 @@ class OptionsForm : GradientForm {
     }
 }
 
+static class AppInfo {
+    public const string Version = "0.1.0";   // keep in step with installer\build-installer.ps1
+    public const string IssuesUrl = "https://github.com/Wndwsqrrl/MLBBobble-recomp/issues";
+}
+
+// Logs live in Documents\bobbleheadpros\logs, next to the saves: the games' own folder
+// may be under Program Files, where they cannot write. The launcher gives each game
+// session its own log file (keeping the last 10 per game) and keeps a launcher.log.
+static class Logs {
+    public static string DirOverride;   // tests only
+    public static string Dir {
+        get { return DirOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "bobbleheadpros", "logs"); }
+    }
+    public static string LauncherLog { get { return Path.Combine(Dir, "launcher.log"); } }
+
+    public static void Write(string message) {
+        try {
+            Directory.CreateDirectory(Dir);
+            var fi = new FileInfo(LauncherLog);
+            if (fi.Exists && fi.Length > 1024 * 1024) {             // keep one previous file
+                string old = Path.Combine(Dir, "launcher.old.log");
+                if (File.Exists(old)) File.Delete(old);
+                File.Move(LauncherLog, old);
+            }
+            File.AppendAllText(LauncherLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + message + "\r\n");
+        } catch { }
+    }
+
+    // A fresh log path for one game session; older sessions beyond the last 10 are removed.
+    public static string NewGameLog(string key) {
+        try {
+            Directory.CreateDirectory(Dir);
+            var old = new List<FileInfo>(new DirectoryInfo(Dir).GetFiles(key + "_*.log"));
+            old.Sort((a, b) => b.LastWriteTime.CompareTo(a.LastWriteTime));
+            for (int i = 9; i < old.Count; i++) { try { old[i].Delete(); } catch { } }
+        } catch { }
+        return Path.Combine(Dir, key + "_" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+    }
+}
+
+static class GameRun {
+    // Starts a game with its data folder and a log file. Returns null on success.
+    public static string Start(GameDef g) {
+        try {
+            string log = Logs.NewGameLog(g.Key);
+            string args = "--game_data_root=\"" + g.Data + "\" --log_file=\"" + log + "\"";
+            var psi = new ProcessStartInfo(g.Exe, args);
+            psi.WorkingDirectory = Path.GetDirectoryName(g.Exe);
+            psi.UseShellExecute = true;
+            Process.Start(psi);
+            Logs.Write("start " + g.Key + ": \"" + g.Exe + "\" " + args);
+            return null;
+        } catch (Exception ex) {
+            Logs.Write("start " + g.Key + " FAILED: " + ex.Message);
+            return ex.Message;
+        }
+    }
+}
+
+// "Report a problem": one zip on the Desktop with what is needed to look into an issue:
+// recent game logs, the launcher log, a short system summary and both games' settings.
+// The user's Windows account name is replaced with <user> in everything collected.
+static class Report {
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    class MEMORYSTATUSEX {
+        public uint dwLength = 64, dwMemoryLoad;
+        public ulong ullTotalPhys, ullAvailPhys, ullTotalPageFile, ullAvailPageFile, ullTotalVirtual, ullAvailVirtual, ullAvailExtendedVirtual;
+    }
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern bool GlobalMemoryStatusEx([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] MEMORYSTATUSEX m);
+
+    static string Reg(string key, string name) {
+        try { var v = Microsoft.Win32.Registry.GetValue(key, name, null); return v == null ? "?" : v.ToString().Trim(); }
+        catch { return "?"; }
+    }
+
+    static string Clean(string text) {
+        string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrEmpty(profile)) text = Regex.Replace(text, Regex.Escape(profile), "<user-folder>", RegexOptions.IgnoreCase);
+        string user = Environment.UserName;
+        if (!string.IsNullOrEmpty(user) && user.Length > 1)
+            text = Regex.Replace(text, @"(?<![A-Za-z0-9])" + Regex.Escape(user) + @"(?![A-Za-z0-9])", "<user>", RegexOptions.IgnoreCase);
+        return text;
+    }
+
+    public static string SystemSummary(List<GameDef> games) {
+        var sb = new StringBuilder();
+        sb.AppendLine("MLB Bobblehead Recomp launcher " + AppInfo.Version);
+        sb.AppendLine("Report created: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        const string nt = @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+        // ProductName still says "Windows 10" on Windows 11; the build number tells them apart.
+        string product = Reg(nt, "ProductName"); int build;
+        if (int.TryParse(Reg(nt, "CurrentBuild"), out build) && build >= 22000) product = product.Replace("Windows 10", "Windows 11");
+        sb.AppendLine("Windows: " + product + " " + Reg(nt, "DisplayVersion") + " (build " + Reg(nt, "CurrentBuild") + "." + Reg(nt, "UBR") + ")"
+                      + (Environment.Is64BitOperatingSystem ? ", 64-bit" : ", 32-bit"));
+        sb.AppendLine("CPU: " + Reg(@"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0", "ProcessorNameString")
+                      + " (" + Environment.ProcessorCount + " threads)");
+        try { var m = new MEMORYSTATUSEX(); if (GlobalMemoryStatusEx(m)) sb.AppendLine("RAM: " + (m.ullTotalPhys / (1024 * 1024 * 1024.0)).ToString("0.0") + " GB"); } catch { }
+        try {
+            using (var q = new System.Management.ManagementObjectSearcher("SELECT Name, DriverVersion, AdapterRAM FROM Win32_VideoController"))
+                foreach (System.Management.ManagementObject o in q.Get())
+                    sb.AppendLine("GPU: " + o["Name"] + ", driver " + o["DriverVersion"]);
+        } catch (Exception ex) { sb.AppendLine("GPU: unknown (" + ex.Message + ")"); }
+        foreach (var g in games) {
+            sb.AppendLine();
+            sb.AppendLine(g.Name + ":");
+            sb.AppendLine("  program: " + (File.Exists(g.Exe) ? g.Exe : "missing (" + g.Exe + ")"));
+            sb.AppendLine("  game folder: " + (string.IsNullOrEmpty(g.Data) ? "not set" : g.Data));
+            bool hasXex = !string.IsNullOrEmpty(g.Data) && File.Exists(Path.Combine(g.Data, "default.xex"));
+            sb.AppendLine("  default.xex: " + (!hasXex ? "not found" : g.XexMatches(g.Data) ? "verified (expected version)" : "DIFFERENT from the expected version"));
+        }
+        return Clean(sb.ToString());
+    }
+
+    public static string OutDirOverride;   // tests only
+
+    // Returns the zip's path, or throws.
+    public static string Create(List<GameDef> games) {
+        string desktop = OutDirOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        string zipPath = Path.Combine(desktop, "MLB-Bobblehead-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip");
+        using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create)) {
+            Action<string, string> add = (name, text) => {
+                var e = zip.CreateEntry(name);
+                using (var w = new StreamWriter(e.Open(), new UTF8Encoding(false))) w.Write(text);
+            };
+            add("system.txt", SystemSummary(games));
+            Func<string, string> read = p => {
+                using (var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))   // a running game keeps its log open
+                using (var r = new StreamReader(fs)) return Clean(r.ReadToEnd());
+            };
+            if (Directory.Exists(Logs.Dir)) {
+                foreach (var g in games) {
+                    var logs = new List<FileInfo>(new DirectoryInfo(Logs.Dir).GetFiles(g.Key + "_*.log"));
+                    logs.Sort((a, b) => b.LastWriteTime.CompareTo(a.LastWriteTime));
+                    for (int i = 0; i < Math.Min(3, logs.Count); i++)
+                        try { add("logs/" + logs[i].Name, read(logs[i].FullName)); } catch { }
+                }
+                foreach (string n in new[] { "launcher.log", "launcher.old.log" })
+                    if (File.Exists(Path.Combine(Logs.Dir, n))) try { add("logs/" + n, read(Path.Combine(Logs.Dir, n))); } catch { }
+            }
+            foreach (var g in games) {
+                try {
+                    string toml = Path.ChangeExtension(g.Exe, ".toml");
+                    if (File.Exists(toml)) add("settings/" + Path.GetFileName(toml), read(toml));
+                } catch { }
+            }
+        }
+        Logs.Write("report created: " + Clean(zipPath));
+        return zipPath;
+    }
+}
+
 static class Program {
     static Icon LoadAppIcon(List<GameDef> games) {
         foreach (var g in games)
@@ -876,14 +1023,8 @@ static class Program {
         }
         if (playKey != null) {
             var pg = games.Find(gg => gg.Key == playKey);
-            if (pg != null && pg.Installed) {
-                try {
-                    var psi = new ProcessStartInfo(pg.Exe, "--game_data_root=\"" + pg.Data + "\"");
-                    psi.WorkingDirectory = Path.GetDirectoryName(pg.Exe); psi.UseShellExecute = true;
-                    Process.Start(psi);
-                    return;
-                } catch { /* fall through to the launcher window */ }
-            }
+            if (pg != null && pg.Installed && GameRun.Start(pg) == null) return;
+            // otherwise fall through to the launcher window
         }
 
         // startup installed-check: walk through setup if anything is missing
@@ -939,6 +1080,26 @@ static class Program {
         };
         f.Controls.Add(setup);
 
+        var report = new RoundButton { Text = "Report a problem", Size = new Size(170, 36),
+            Location = new Point(w - margin - 170, 28) };
+        report.Click += delegate {
+            try {
+                string zip = Report.Create(games);
+                Process.Start("explorer.exe", "/select,\"" + zip + "\"");
+                MessageBox.Show(
+                    "A problem report was saved to your Desktop:\n" + Path.GetFileName(zip) + "\n\n" +
+                    "It holds your recent game and launcher logs, a short system summary (Windows, CPU, RAM, GPU) " +
+                    "and the games' settings; your Windows user name is removed. No game files are included.\n\n" +
+                    "Send it in with a short description of what happened, for example by attaching it to an issue at\n" +
+                    AppInfo.IssuesUrl, "Report a problem", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            } catch (Exception ex) {
+                MessageBox.Show("Could not create the report:\n" + ex.Message, "Report a problem",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+        f.Controls.Add(report);
+
+        Logs.Write("launcher " + AppInfo.Version + " started" + (playKey != null ? " (--play " + playKey + ")" : ""));
         Application.Run(f);
     }
 }

@@ -22,7 +22,7 @@ runtime. No emulator is involved. You supply the game data from your own copy.
 
 - [Quick start](#quick-start) · [What's in the download](#whats-in-the-download)
 - [Requirements](#requirements) · [Getting your game files](#getting-your-game-files)
-- [Controls](#controls) · [Launcher](#launcher)
+- [Controls](#controls) · [Launcher](#launcher) · [Reporting a problem](#reporting-a-problem)
 - [Building from source](#building-from-source) · [Android](#android-pros-only-experimental)
 - [Known issues](#known-issues) · [Repository layout](#repository-layout)
 - [Acknowledgements](#acknowledgements) · [Legal](#legal)
@@ -103,6 +103,23 @@ The launcher (`MLB Bobblehead Launcher.exe`) ties both games together:
 
 It remembers your game folders in `launcher.cfg` next to the launcher.
 
+## Reporting a problem
+
+If something goes wrong, click **Report a problem** in the launcher. It saves one zip to your
+Desktop with:
+
+- your most recent game logs and the launcher's log,
+- a short system summary (Windows version, CPU, RAM, GPU and driver) and whether your
+  `default.xex` matched the expected version,
+- both games' settings files.
+
+Your Windows user name is removed from everything in it, and it contains no game files or
+saves. Attach it to an [issue](https://github.com/Wndwsqrrl/MLBBobble-recomp/issues) with a
+short description of what happened.
+
+The logs themselves are in `Documents\bobbleheadpros\logs\`: one file per game session (the
+last 10 per game are kept) and `launcher.log`.
+
 ## Building from source
 
 You need:
@@ -135,8 +152,13 @@ bobbleheadpros.exe   --game_data_root="D:\path\to\MLB Bobblehead Pros (World) (X
 bobbleheadbattle.exe --game_data_root="D:\path\to\MLB Bobblehead Battle (World) (XBLA)\extracted"
 ```
 
-**Launcher:** `csc -target:winexe -out:"MLB Bobblehead Launcher.exe" -r:System.Windows.Forms.dll -r:System.Drawing.dll Launcher.cs`
-from `launcher\` (the .NET Framework compiler that comes with Windows).
+**Launcher:** from `launcher\`, with the .NET Framework compiler that comes with Windows
+(`%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`):
+
+```powershell
+csc -target:winexe -out:"MLB Bobblehead Launcher.exe" -r:System.Windows.Forms.dll -r:System.Drawing.dll `
+    -r:System.IO.Compression.dll -r:System.IO.Compression.FileSystem.dll -r:System.Management.dll Launcher.cs
+```
 
 **Installer:** with both games and the launcher built and
 [Inno Setup 6](https://jrsoftware.org/isinfo.php) installed (`winget install JRSoftware.InnoSetup`):

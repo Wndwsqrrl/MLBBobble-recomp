@@ -22,6 +22,9 @@ recompiled game programs but no game data; see the README for how to extract you
 - **Launcher** with game cards, a first-run setup that checks your `default.xex` is the version
   these builds were made from, and options for V-Sync, keyboard mode, fullscreen and
   resolution (720p to 4K).
+- **Report a problem:** one click saves a zip with your recent logs, a short system summary
+  and the games' settings (your user name removed) to attach to an issue. Logs are kept in
+  `Documents\bobbleheadpros\logs\`.
 - Picks the discrete GPU on laptops with two GPUs.
 
 ## Known issues
