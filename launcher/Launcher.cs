@@ -36,6 +36,19 @@ static class Theme {
 class GameDef {
     public string Key, Name, Exe, Data;
     public string[] Icons;
+    // SHA-256 of the default.xex these builds were recompiled from. The exe only works with
+    // that exact version, so the setup screen checks the player's copy against it.
+    public string XexSha;
+
+    public static string Sha256(string path) {
+        using (var h = System.Security.Cryptography.SHA256.Create())
+        using (var f = File.OpenRead(path))
+            return BitConverter.ToString(h.ComputeHash(f)).Replace("-", "");
+    }
+    public bool XexMatches(string folder) {
+        try { return string.Equals(Sha256(Path.Combine(folder, "default.xex")), XexSha, StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
     public bool Installed {
         get {
             try { return File.Exists(Exe) && File.Exists(Path.Combine(Data, "default.xex")); }
@@ -606,7 +619,7 @@ class SetupForm : GradientForm {
         Controls.Add(name);
         var status = new Label { ForeColor = gd.Installed ? Theme.Good : Theme.Bad, Font = new Font("Segoe UI", 10),
             AutoSize = true, Location = new Point(300, y + 1), BackColor = Color.Transparent };
-        status.Text = gd.Installed ? "Installed" : "Not found";
+        status.Text = !gd.Installed ? "Not found" : gd.XexMatches(gd.Data) ? "Verified" : "Installed";
         Controls.Add(status);
         var locate = new RoundButton { Text = "Locate folder...", Size = new Size(150, 36), Location = new Point(390, y - 4) };
         locate.Click += delegate {
@@ -615,9 +628,18 @@ class SetupForm : GradientForm {
                 if (fb.ShowDialog() == DialogResult.OK) {
                     string path = fb.SelectedPath;
                     if (File.Exists(Path.Combine(path, "default.xex"))) {
+                        bool ok = gd.XexMatches(path);
+                        if (!ok && MessageBox.Show(
+                                "This default.xex is not the version " + gd.Name + " was built from.\n\n" +
+                                "It may be a different region or version, or the files may have been modified. " +
+                                "These builds were made from the Xbox Live Arcade release (World) and only " +
+                                "work with that exact default.xex.\n\nUse this folder anyway?",
+                                "Setup", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+                            != DialogResult.Yes)
+                            return;
                         gd.Data = path;
-                        status.ForeColor = gd.Installed ? Theme.Good : Theme.Bad;
-                        status.Text = gd.Installed ? "Installed" : "Exe missing";
+                        status.ForeColor = gd.Installed ? (ok ? Theme.Good : Theme.Bad) : Theme.Bad;
+                        status.Text = !gd.Installed ? "Exe missing" : ok ? "Verified" : "Unverified copy";
                     } else {
                         MessageBox.Show("That folder has no default.xex.\nPick the folder that contains the game's default.xex.",
                             "Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -822,10 +844,12 @@ static class Program {
         var games = new List<GameDef> {
             new GameDef { Key = "pros", Name = "MLB Bobblehead Pros",
                 Exe = prosExe, Data = prosData,
+                XexSha = "978423F1AFF4507D62D867D7839F816C407E8A500F2B15B98DD3145D79CFCCE5",
                 Icons = new[] { Path.Combine(artDir, "pros.png"),
                                 string.IsNullOrEmpty(prosData) ? "" : Path.Combine(prosData, "TitleIcon.png") } },
             new GameDef { Key = "battle", Name = "MLB Bobblehead Battle",
                 Exe = battleExe, Data = battleData,
+                XexSha = "1ADA5B978D047429A138AC68505C62D5101E96DF5B260C6003106DCE88B36E1D",
                 Icons = new[] { Path.Combine(artDir, "battle.png"),
                                 string.IsNullOrEmpty(battleData) ? "" : Path.Combine(battleData, "TitleIcon.png") } }
         };

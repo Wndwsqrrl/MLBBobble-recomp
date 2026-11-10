@@ -8,7 +8,7 @@
 ; Compile:  ISCC.exe MLBBobble.iss  (or run installer\build-installer.ps1)
 
 #define AppName    "MLB Bobblehead Recomp"
-#define AppVersion "1.0.0"
+#define AppVersion "0.1.0"
 #define AppPublisher "MLBBobble-recomp"
 #define AppURL     "https://github.com/Wndwsqrrl/MLBBobble-recomp"
 #define Launcher   "MLB Bobblehead Launcher.exe"
